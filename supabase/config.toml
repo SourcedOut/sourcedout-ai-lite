@@ -1,0 +1,4 @@
+project_id = "szxjcitbjcpkhxtjztay"
+
+[functions.enrich-and-draft]
+verify_jwt = false

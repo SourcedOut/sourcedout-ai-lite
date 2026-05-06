@@ -1,0 +1,630 @@
+Here’s text you can paste directly to Replit. It’s written as a **step‑by‑step implementation spec** with concrete code edits, not high-level guidance.[1][2]
+
+***
+
+# SourcedOut search optimization — implementation spec (no guessing)
+
+I need you to implement **specific code changes** to the Supabase edge function `enrich-and-draft` so that it can reliably use Brave + Google + Haiku to find work emails, personal emails, and phone numbers.
+
+Please follow these instructions exactly rather than redesigning the flow from scratch.
+
+***
+
+## CHANGE 0 — Context
+
+Current behavior (from the existing `index.ts`):
+
+- `googleCseFindEmail` builds a single Google query, fetches 5 results, scrapes snippets for emails, and returns at most one email.  
+- Haiku is used as a pattern guesser (`haikuEmailGuess`), not as an analyst of real search evidence.  
+- No phone numbers are extracted.  
+- Apollo is still wired through `runEmailWaterfall`.
+
+We’re replacing that with:
+
+- Brave + Google multi‑query search.  
+- Evidence collection (emails + phones + URLs + signals).  
+- Haiku evidence analysis → candidate ranking.  
+- MyEmailVerifier validation of top candidates.  
+- Apollo removed from the waterfall.
+
+All line numbers below are approximate; use function names and comments as anchors.
+
+***
+
+## CHANGE 1 — Add phone extraction utilities
+
+**Location:** In `index.ts`, after the email-pattern helpers (right after `defaultPatterns`), add:
+
+```ts
+//──  Phone helpers ─────────────────────────────────────────────────────────────
+function extractPhones(text: string): string[] {
+  const patterns = [
+    /\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g,  // US: 555-123-4567, 555.123.4567, 555 123 4567
+    /(\+\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}\b/g,  // International
+    /ext\.?\s*\d{2,6}\b/gi,  // extensions
+    /x\d{2,6}\b/gi,          // x123 style extensions
+  ]
+  const found: string[] = []
+  for (const pattern of patterns) {
+    const matches = text.match(pattern) || []
+    found.push(...matches)
+  }
+  return Array.from(new Set(found.map(p => p.trim())))
+}
+
+function normalizePhone(phone: string): string | null {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length >= 10 && digits.length <= 15) {
+    return digits
+  }
+  return null
+}
+```
+
+***
+
+## CHANGE 2 — Add search query generator
+
+**Location:** Immediately after the phone helpers above, add:
+
+```ts
+//── Search query families ────────────────────────────────────────────────────
+interface QueryFamilies {
+  work_email: string[]
+  personal_email: string[]
+  work_phone: string[]
+  personal_phone: string[]
+}
+
+function buildSearchQueries(
+  fullName: string,
+  companyName: string | null,
+  domain: string | null
+): QueryFamilies {
+  const families: QueryFamilies = {
+    work_email: [],
+    personal_email: [],
+    work_phone: [],
+    personal_phone: [],
+  }
+
+  if (!fullName) return families
+
+  // Work email queries
+  families.work_email.push(`"${fullName}" "${companyName}" email`)
+  if (domain) {
+    families.work_email.push(`"${fullName}" "@${domain}"`)
+    families.work_email.push(`"${fullName}" site:${domain}`)
+  }
+  if (companyName) {
+    const slug = companyName.toLowerCase().replace(/\s+/g, '')
+    families.work_email.push(`"${fullName}" site:${slug}.com`)
+    families.work_email.push(`"${fullName}" intitle:team OR intitle:bio "${companyName}"`)
+  }
+
+  // Personal email queries
+  families.personal_email.push(`"${fullName}" gmail.com`)
+  families.personal_email.push(`"${fullName}" yahoo.com OR outlook.com`)
+  families.personal_email.push(`"${fullName}" contact`)
+
+  // Work phone queries
+  if (companyName) {
+    families.work_phone.push(`"${fullName}" "${companyName}" phone`)
+    families.work_phone.push(`"${fullName}" "${companyName}" direct`)
+  }
+  if (domain) {
+    families.work_phone.push(`"${fullName}" site:${domain} phone`)
+  }
+
+  // Personal phone queries
+  families.personal_phone.push(`"${fullName}" phone`)
+  families.personal_phone.push(`"${fullName}" mobile OR contact`)
+
+  return families
+}
+```
+
+***
+
+## CHANGE 3 — Replace `googleCseFindEmail` with multi‑engine search
+
+We no longer want a “find one email from snippets” function. Replace it with a Brave+Google evidence collector.
+
+**Location:** Find the existing `googleCseFindEmail` function and delete it entirely.
+
+**Insert this instead (near where `googleCseFindEmail` was):**
+
+```ts
+//── Step 3: Google & Brave multi-query evidence collection ──────────────────
+interface SearchEvidence {
+  engine: 'google' | 'brave'
+  query: string
+  title: string
+  snippet: string
+  url: string
+  emails: string[]
+  phones: string[]
+  signals: string[]
+}
+
+async function runMultiSearch(
+  fullName: string,
+  companyName: string | null,
+  domain: string | null,
+  googleKey: string,
+  googleCx: string,
+  braveKey: string,
+): Promise<{
+  evidence: SearchEvidence[]
+  work_emails: string[]
+  personal_emails: string[]
+  work_phones: string[]
+  personal_phones: string[]
+}> {
+  if (!fullName) {
+    return { evidence: [], work_emails: [], personal_emails: [], work_phones: [], personal_phones: [] }
+  }
+
+  const queries = buildSearchQueries(fullName, companyName, domain)
+  const allEvidence: SearchEvidence[] = []
+
+  const workEmailSet = new Set<string>()
+  const personalEmailSet = new Set<string>()
+  const workPhoneSet = new Set<string>()
+  const personalPhoneSet = new Set<string>()
+
+  function extractEvidenceFromResult(
+    item: any,
+    engine: 'google' | 'brave',
+    query: string,
+    category: 'work_email' | 'personal_email' | 'work_phone' | 'personal_phone',
+  ): SearchEvidence {
+    const title = item.title || ''
+    const snippet = item.snippet || item.description || ''
+    const url = item.link || item.url || ''
+    const haystack = `${title} ${snippet} ${url}`
+
+    const emailRegex = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
+    const emails = haystack.match(emailRegex) || []
+    const phones = extractPhones(haystack)
+
+    const signals: string[] = []
+    if (/team|bio|about|leadership|directory/i.test(title + url)) signals.push('team_page')
+    if (/\.pdf$/i.test(url)) signals.push('pdf')
+    if (domain && url.toLowerCase().includes(domain.toLowerCase())) signals.push('company_site')
+    if (/contact|directory/i.test(haystack)) signals.push('contact_page')
+
+    for (const email of emails) {
+      if (category.includes('work') && domain && email.toLowerCase().endsWith(`@${domain}`)) {
+        workEmailSet.add(email)
+      } else if (category.includes('personal') && /gmail|yahoo|outlook|proton/i.test(email)) {
+        personalEmailSet.add(email)
+      }
+    }
+
+    for (const phone of phones) {
+      const normalized = normalizePhone(phone)
+      if (normalized) {
+        if (category.includes('work')) workPhoneSet.add(normalized)
+        else if (category.includes('personal')) personalPhoneSet.add(normalized)
+      }
+    }
+
+    return { engine, query, title, snippet, url, emails, phones, signals }
+  }
+
+  // Google
+  if (googleKey && googleCx) {
+    const allQueries = [
+      ...queries.work_email.slice(0, 2),
+      ...queries.personal_email.slice(0, 1),
+      ...queries.work_phone.slice(0, 1),
+      ...queries.personal_phone.slice(0, 1),
+    ]
+
+    for (const q of allQueries.slice(0, 5)) {
+      try {
+        const category =
+          queries.work_email.includes(q) ? 'work_email' :
+          queries.personal_email.includes(q) ? 'personal_email' :
+          queries.work_phone.includes(q) ? 'work_phone' :
+          'personal_phone'
+
+        const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(googleKey)}&cx=${encodeURIComponent(googleCx)}&q=${encodeURIComponent(q)}&num=10`
+        const res = await fetch(url)
+        if (!res.ok) continue
+
+        const data = await res.json()
+        const items = Array.isArray(data.items) ? data.items : []
+
+        for (const item of items.slice(0, 10)) {
+          const ev = extractEvidenceFromResult(item, 'google', q, category)
+          allEvidence.push(ev)
+        }
+      } catch (e) {
+        console.error(`Google query failed: ${q}`, e)
+      }
+    }
+  }
+
+  // Brave
+  if (braveKey) {
+    const allQueries = [
+      ...queries.work_email.slice(0, 3),
+      ...queries.personal_email.slice(0, 2),
+      ...queries.work_phone.slice(0, 2),
+      ...queries.personal_phone.slice(0, 1),
+    ]
+
+    for (const q of allQueries.slice(0, 8)) {
+      try {
+        const category =
+          queries.work_email.includes(q) ? 'work_email' :
+          queries.personal_email.includes(q) ? 'personal_email' :
+          queries.work_phone.includes(q) ? 'work_phone' :
+          'personal_phone'
+
+        const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10`
+        const res = await fetch(url, {
+          headers: {
+            Accept: 'application/json',
+            'X-Subscription-Token': braveKey,
+          },
+        })
+        if (!res.ok) continue
+
+        const data = await res.json()
+        const items = Array.isArray(data.web?.results) ? data.web.results : []
+
+        for (const item of items.slice(0, 10)) {
+          const ev = extractEvidenceFromResult(item, 'brave', q, category)
+          allEvidence.push(ev)
+        }
+      } catch (e) {
+        console.error(`Brave query failed: ${q}`, e)
+      }
+    }
+  }
+
+  return {
+    evidence: allEvidence,
+    work_emails: Array.from(workEmailSet),
+    personal_emails: Array.from(personalEmailSet),
+    work_phones: Array.from(workPhoneSet),
+    personal_phones: Array.from(personalPhoneSet),
+  }
+}
+```
+
+***
+
+## CHANGE 4 — Replace `haikuEmailGuess` with evidence analysis
+
+We no longer want Haiku to blindly guess patterns. We want it to analyze `SearchEvidence`.
+
+**Location:** Find `async function haikuEmailGuess(...)` and remove it entirely.
+
+**Insert this new function instead:**
+
+```ts
+//── Step 2: Haiku evidence analysis (NOT blind guessing) ──────────────────────
+async function haikuAnalyzeEvidence(
+  fullName: string,
+  companyName: string | null,
+  domain: string | null,
+  searchEvidence: SearchEvidence[],
+  anthropicKey: string,
+): Promise<{
+  work_email_candidates: Array<{ value: string; confidence: number; reason: string }>
+  personal_email_candidates: Array<{ value: string; confidence: number; reason: string }>
+  work_phone_candidates: Array<{ value: string; confidence: number; reason: string }>
+  personal_phone_candidates: Array<{ value: string; confidence: number; reason: string }>
+  domain: string | null
+}> {
+  if (!anthropicKey || !fullName) {
+    return {
+      work_email_candidates: [],
+      personal_email_candidates: [],
+      work_phone_candidates: [],
+      personal_phone_candidates: [],
+      domain,
+    }
+  }
+
+  const evidenceJson = JSON.stringify(searchEvidence.slice(0, 15), null, 2)
+
+  const prompt = `You are analyzing public web search evidence to identify likely contact information for one person.
+
+Person: ${fullName}
+Company: ${companyName || 'unknown'}
+Known work domain: ${domain || 'unknown'}
+
+Search evidence:
+${evidenceJson}
+
+Return ONLY JSON:
+{
+  "work_email_candidates": [{"value":"","confidence":0.0,"reason":""}],
+  "personal_email_candidates": [{"value":"","confidence":0.0,"reason":""}],
+  "work_phone_candidates": [{"value":"","confidence":0.0,"reason":""}],
+  "personal_phone_candidates": [{"value":"","confidence":0.0,"reason":""}],
+  "best_domain": "example.com or null"
+}
+
+Rules:
+- Prefer evidence from company sites, bios, directories, PDFs, conference pages.
+- Separate work vs personal contact data.
+- Do not invent values not supported by the evidence.
+- If evidence is weak, return fewer candidates.
+- confidence: 0.0–1.0 per candidate.
+- Sort candidates by confidence desc.`
+
+  const raw = await callAnthropic(anthropicKey, 'claude-haiku-4-5', 600, prompt)
+  const p = parseJson(raw)
+
+  const inferredDomain =
+    typeof p.best_domain === 'string' && p.best_domain.includes('.')
+      ? p.best_domain.toLowerCase().trim()
+      : domain
+
+  return {
+    work_email_candidates: Array.isArray(p.work_email_candidates) ? p.work_email_candidates : [],
+    personal_email_candidates: Array.isArray(p.personal_email_candidates) ? p.personal_email_candidates : [],
+    work_phone_candidates: Array.isArray(p.work_phone_candidates) ? p.work_phone_candidates : [],
+    personal_phone_candidates: Array.isArray(p.personal_phone_candidates) ? p.personal_phone_candidates : [],
+    domain: inferredDomain,
+  }
+}
+```
+
+***
+
+## CHANGE 5 — Rewrite `runEmailWaterfall`
+
+We want the waterfall to be:
+
+1. multi_search (Google+Brave)  
+2. haiku_evidence_analysis  
+3. myemailverifier  
+
+**Location:** Find `async function runEmailWaterfall(opts: { ... })` and replace its internal logic with:
+
+```ts
+async function runEmailWaterfall(opts: {
+  fullName: string
+  companyName: string | null
+  knownDomain: string | null
+  anthropicKey: string
+  googleKey: string
+  googleCx: string
+  braveKey: string
+  myEmailVerifierKey: string
+  step: ReturnType<typeof makeStepLogger>['step']
+}): Promise<WaterfallResult> {
+  const {
+    fullName,
+    companyName,
+    knownDomain,
+    anthropicKey,
+    googleKey,
+    googleCx,
+    braveKey,
+    myEmailVerifierKey,
+    step,
+  } = opts
+
+  let workingDomain: string | null = knownDomain
+  let workEmails: string[] = []
+  let personalEmails: string[] = []
+  let evidence: SearchEvidence[] = []
+
+  // Step 2 — Multi-search (Google + Brave)
+  await step<{ engines: string[]; queries: number; evidence_count: number }>('multi_search', async () => {
+    if ((!googleKey || !googleCx) && !braveKey) {
+      return { status: 'SKIP', reason: 'no_search_keys' }
+    }
+    if (!fullName) return { status: 'SKIP', reason: 'no_full_name' }
+
+    const result = await runMultiSearch(fullName, companyName, workingDomain, googleKey, googleCx, braveKey || '')
+    evidence = result.evidence
+    workEmails = result.work_emails
+    personalEmails = result.personal_emails
+
+    const engines = [...new Set(evidence.map(e => e.engine))]
+    const queries = new Set(evidence.map(e => e.query)).size
+
+    if (evidence.length === 0) {
+      return { status: 'MISS', reason: 'no_results', meta: { engines, queries: 0, evidence_count: 0 } }
+    }
+
+    return {
+      status: 'OK',
+      meta: {
+        engines,
+        queries,
+        evidence_count: evidence.length,
+      },
+    }
+  })
+
+  // Step 3 — Haiku evidence analysis
+  let haikuCandidates: { value: string; confidence: number }[] = []
+
+  await step<{ work_candidates: number; personal_candidates: number }>('haiku_evidence_analysis', async () => {
+    if (!anthropicKey) return { status: 'SKIP', reason: 'no_anthropic_key' }
+    if (!fullName) return { status: 'SKIP', reason: 'no_full_name' }
+    if (evidence.length === 0) return { status: 'SKIP', reason: 'no_evidence' }
+
+    const analysis = await haikuAnalyzeEvidence(fullName, companyName, workingDomain, evidence, anthropicKey)
+
+    if (analysis.domain) workingDomain = analysis.domain
+
+    for (const email of workEmails) {
+      if (!haikuCandidates.find(c => c.value === email)) {
+        haikuCandidates.push({ value: email, confidence: 0.8 })
+      }
+    }
+
+    for (const c of analysis.work_email_candidates.slice(0, 3)) {
+      if (!haikuCandidates.find(x => x.value === c.value)) {
+        haikuCandidates.push({ value: c.value, confidence: c.confidence })
+      }
+    }
+
+    haikuCandidates.sort((a, b) => b.confidence - a.confidence)
+
+    return {
+      status: haikuCandidates.length > 0 ? 'OK' : 'MISS',
+      meta: {
+        work_candidates: haikuCandidates.length,
+        personal_candidates: analysis.personal_email_candidates.length,
+      },
+    }
+  })
+
+  // Step 4 — MyEmailVerifier (validate candidates)
+  let verifiedEmail: string | null = null
+
+  await step<{ email: string | null }>('myemailverifier', async () => {
+    if (!myEmailVerifierKey) return { status: 'SKIP', reason: 'no_mev_key' }
+    if (haikuCandidates.length === 0) return { status: 'SKIP', reason: 'no_candidates' }
+
+    const tried: string[] = []
+    for (const candidate of haikuCandidates.slice(0, 5)) {
+      tried.push(maskEmail(candidate.value))
+      try {
+        const v = await myEmailVerifierValidate(candidate.value, myEmailVerifierKey)
+        if (v.status === 'valid') {
+          verifiedEmail = candidate.value
+          return { status: 'OK', meta: { email: maskEmail(candidate.value), tried } }
+        }
+      } catch (e: any) {
+        console.error('MEV validation error:', e)
+      }
+    }
+
+    return { status: 'MISS', reason: 'no_valid_candidate', meta: { tried } }
+  })
+
+  if (verifiedEmail) {
+    return {
+      email: verifiedEmail,
+      emailStatus: 'found',
+      source: 'search+haiku+verifier',
+      title: null,
+      domain: workingDomain,
+    }
+  }
+
+  return {
+    email: null,
+    emailStatus: 'not_found',
+    source: 'none',
+    title: null,
+    domain: workingDomain,
+  }
+}
+```
+
+Also update the `WaterfallResult` type to match.
+
+**Find:**
+
+```ts
+source: 'haiku+verifier' | 'google_cse' | 'apollo' | 'none'
+```
+
+**Replace with:**
+
+```ts
+source: 'search+haiku+verifier' | 'google_cse' | 'none'
+```
+
+(If `google_cse` is no longer referenced you can remove it too; otherwise leave it.)
+
+***
+
+## CHANGE 6 — Replace Apollo with Brave in env + calls
+
+In the main handler, we no longer need Apollo. We need Brave.
+
+**Find this in the env block:**
+
+```ts
+const apolloKey = Deno.env.get('APOLLO_API_KEY') || ''
+```
+
+**Replace with:**
+
+```ts
+const braveKey = Deno.env.get('BRAVE_API_KEY') || ''
+```
+
+Then, for every `runEmailWaterfall({ ... })` call, change the argument list to pass `braveKey` instead of `apolloKey`.
+
+Example:
+
+```ts
+waterfall = await runEmailWaterfall({
+  fullName,
+  companyName: candidate.current_company || null,
+  knownDomain: csvEmailDomain,
+  anthropicKey,
+  googleKey,
+  googleCx,
+  braveKey,          // was apolloKey
+  myEmailVerifierKey,
+  step,
+})
+```
+
+Also remove the Apollo-specific step and any `apollo` usage from the waterfall if still present.
+
+***
+
+## CHANGE 7 — Environment variables
+
+In Supabase edge function config:
+
+- **Add:**
+
+```bash
+BRAVE_API_KEY=<your_brave_search_api_key>
+```
+
+- **Remove:**
+
+```bash
+APOLLO_API_KEY
+```
+
+(unless you need it elsewhere; it should not be used in this function anymore)
+
+***
+
+## Verification checklist (what I want from you)
+
+After you implement the changes and deploy:
+
+1. Run enrichment for a known test candidate.  
+2. In `enrichment_debug_logs`, for that run, please confirm:  
+   - `multi_search` step:  
+     - `engines` includes at least `brave` and/or `google`.  
+     - `queries > 0`.  
+     - `evidence_count > 0`.  
+   - `haiku_evidence_analysis` step:  
+     - `work_candidates > 0` or a clear reason in `reason`.  
+   - `myemailverifier` step:  
+     - `meta.tried` shows the masked emails attempted.  
+3. Confirm that the final `WaterfallResult.source` is `search+haiku+verifier` when an email is found.  
+4. Confirm that at least one test case shows Google CSE returning non‑empty `items` for a query (HTTP 200, with items).  
+5. Send me:  
+   - The final `runEmailWaterfall` implementation,  
+   - The new `runMultiSearch`, `haikuAnalyzeEvidence`, `extractPhones`, and `buildSearchQueries` functions,  
+   - A screenshot or copy of one enriched candidate’s debug log steps.
+
+If anything above is ambiguous, please ask me **before** changing behavior beyond this spec.
+
+Sources
+[1] index.ts https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/32453238/ac285d42-17eb-4a3e-8973-2deab4a71370/index.ts
+[2] index.ts https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/32453238/9fb5fe4f-93a9-4554-94bf-d64f03e86c5c/index.ts
