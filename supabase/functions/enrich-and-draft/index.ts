@@ -1051,7 +1051,7 @@ async function myEmailVerifierValidate(
 ): Promise<{ status: 'valid' | 'invalid' | 'risky' | 'unknown'; raw: any }> {
   if (!key || !email) return { status: 'unknown', raw: null }
   const url = `https://client.myemailverifier.com/verifier/validate_single/${encodeURIComponent(email)}/${encodeURIComponent(key)}`
-  const res = await withTimeout(fetch(url), 8000, 'mev_validate')
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
   const text = await res.text()
   let raw: any = text
   try { raw = JSON.parse(text) } catch {}
@@ -1148,7 +1148,7 @@ async function runGoogleSearchEvidence(
       url.searchParams.set('cx', googleCx)
       url.searchParams.set('q', q)
       url.searchParams.set('num', '5')
-      const res = await withTimeout(fetch(url.toString()), 7000, 'google_query')
+      const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) })
       const data = await res.json()
       if (!res.ok) {
         console.warn(`[google_search] query error ${res.status}:`, JSON.stringify(data))
@@ -1193,9 +1193,10 @@ async function runBraveSearch(
   const urls: string[] = []
   for (const q of queries) {
     try {
-      const res = await withTimeout(fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=5&extra_snippets=true`, {
+      const res = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=5&extra_snippets=true`, {
         headers: { 'Accept': 'application/json', 'X-Subscription-Token': braveKey },
-      }), 7000, 'brave_query')
+        signal: AbortSignal.timeout(8000)
+      })
       const data = await res.json()
       if (!res.ok) { console.warn(`[brave_search] query error ${res.status}:`, JSON.stringify(data)); continue }
       for (const item of data.web?.results || []) {
@@ -1236,11 +1237,12 @@ async function runPdlPersonEnrichment(
   ].filter(Boolean)
   console.log(`[pdl_person_enrichment] calling with identifiers: name + ${usedIdentifiers.join(', ') || 'name_only'}`)
 
-  const res = await withTimeout(fetch('https://api.peopledatalabs.com/v5/person/enrich', {
+  const res = await fetch('https://api.peopledatalabs.com/v5/person/enrich', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': pdlKey },
     body: JSON.stringify(payload),
-  }), 10000, 'pdl_enrich')
+    signal: AbortSignal.timeout(8000)
+  })
   const data = await res.json()
   if (!res.ok) throw new Error(`PDL Person Enrichment error ${res.status}: ${JSON.stringify(data)}`)
 
