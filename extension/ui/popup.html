@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>OutreachAI</title>
+<title>SourcedOut AI</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -28,7 +28,7 @@
     --text-faint:    #48413a;
   }
 
-  /* ── Header (split into two rows) ── */
+  /* ── Header ── */
   .header {
     background: var(--bg);
     border-bottom: 1px solid var(--border);
@@ -61,7 +61,7 @@
     background: var(--surface2); border-color: var(--accent-mid); color: var(--accent-amber);
   }
 
-  /* ── Header row 2: tabs only ── */
+  /* ── Tabs ── */
   .tabs {
     display: flex; background: var(--surface);
   }
@@ -137,7 +137,7 @@
   #statusMessage.warn { background: #2a1f0a; color: #fbbf24; border: 1px solid #78350f; display: block; }
   #statusMessage.error { background: #2a0f0f; color: #f87171; border: 1px solid #5a1a1a; display: block; }
 
-  /* ── Vertical step tracker (replaces bullet progress) ── */
+  /* ── Vertical step tracker ── */
   .progress-step {
     display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; position: relative;
   }
@@ -426,7 +426,7 @@
   .tone-pill:hover:not(.active) { border-color:#d1d5db; background:#f3f4f6; }
   body.dark .tone-pill { background:#1a1d2e; border-color:#2d3148; color:#9ca3af; }
   body.dark .tone-pill.active { background:#0d2a1a; border-color:#16a34a; color:#4ade80; }
-  /* ── Sticky copy row (draft card) ── */
+  /* ── Sticky copy row ── */
   .sticky-copy-row { position:sticky; bottom:0; background:#fff; padding:8px 0 2px; border-top:1px solid #f3f4f6; z-index:2; margin-top:6px; }
   body.dark .sticky-copy-row { background:#1a1d2e; border-top-color:#2d3148; }
   /* ── Separate work/personal email field rows ── */
@@ -440,10 +440,8 @@
   .cs-email-copy { background:none; border:none; cursor:pointer; font-size:11px; color:#9ca3af; padding:0 2px; line-height:1; transition:color 0.12s; flex-shrink:0; }
   .cs-email-copy:hover { color:#6366f1; }
   .cs-no-email { font-size:12px; color:#9ca3af; }
-  /* LinkedIn icon button in header */
   .cs-li-icon-btn { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:4px; background:#0a66c2; color:white; font-size:10px; font-weight:800; text-decoration:none; flex-shrink:0; transition:background 0.12s; line-height:1; }
   .cs-li-icon-btn:hover { background:#0855a5; }
-  /* Collapse toggle on candidate summary */
   .cs-collapse-btn { background:none; border:none; cursor:pointer; color:#9ca3af; font-size:13px; padding:0 2px; line-height:1; transition:all 0.15s; flex-shrink:0; }
   .cs-collapse-btn:hover { color:#374151; }
   body.dark .cs-collapse-btn:hover { color:#d1d5db; }
@@ -454,7 +452,6 @@
   body.dark .cs-email-copy { color:#4b5563; }
   body.dark .cs-email-copy:hover { color:#818cf8; }
   body.dark .cs-li-icon-btn { background:#1e3a5f; }
-  /* ── Event chip in waterfall trail ── */
   .scraper-step.hit-event { background:#fef3c7; color:#92400e; border-color:#fde68a; }
   .title-badge { font-size:10px; padding:1px 5px; border-radius:10px; font-weight:600; margin-left:5px; }
   .title-badge.verified   { background:#dcfce7; color:#166534; }
@@ -462,7 +459,7 @@
   body.dark .title-badge.verified   { background:#0d2a1a; color:#4ade80; }
   body.dark .title-badge.unverified { background:#2a1f0a; color:#fbbf24; }
 
-  /* ── Lookup history rows (diagnostics) ── */
+  /* ── Lookup history rows ── */
   .diag-history-row { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid #f3f4f6; font-size:11px; }
   .diag-history-row:last-child { border-bottom:none; padding-bottom:0; }
   .diag-history-icon { flex-shrink:0; font-size:11px; }
@@ -474,7 +471,7 @@
   body.dark .diag-history-source { color:#4b5563; }
   body.dark .diag-history-time { color:#3a3d52; }
 
-  /* ── Email source trace (candidate summary card) ── */
+  /* ── Email source trace ── */
   .cs-source-trace { font-size:10.5px; color:#9ca3af; margin-top:5px; display:flex; align-items:center; gap:4px; flex-wrap:wrap; line-height:1.4; }
   .cs-source-trace .source-icon { flex-shrink:0; }
   .cs-source-trace .source-label { color:#6b7280; }
@@ -497,7 +494,7 @@
   .scraper-trail { display:flex; flex-wrap:wrap; gap:3px; align-items:center; margin-top:3px; }
   .scraper-step { font-size:10px; padding:1px 5px; border-radius:4px; white-space:nowrap; }
   .scraper-step.miss { background:#f3f4f6; color:#d1d5db; }
-  .scraper-step.hit-excellent { background:#dcfce7; color:#166534; font-weight:600; }
+  .scraper-step.hit-excellent { background:#dcfce7; color:#166634; font-weight:600; }
   .scraper-step.hit-good { background:#dbeafe; color:#1e40af; font-weight:600; }
   .scraper-step.hit-fallback { background:#fef3c7; color:#92400e; font-weight:600; }
   .scraper-step.arrow { background:none; color:#d1d5db; padding:0 1px; font-size:9px; }
@@ -578,7 +575,6 @@
 
   .batch-body { flex: 1; overflow-y: auto; padding: 12px; }
 
-  /* Batch step sections */
   .batch-step { margin-bottom: 12px; }
   .batch-step-title {
     font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
@@ -593,7 +589,6 @@
   body.dark .batch-step-num { background: #2d3148; color: var(--text-muted); }
   body.dark .batch-step-num.done { background: #0d2a1a; color: #4ade80; }
 
-  /* Dropzone */
   .batch-dropzone {
     border: 2px dashed var(--border); border-radius: 8px; padding: 24px 16px;
     text-align: center; cursor: pointer; transition: all 0.15s;
@@ -609,7 +604,6 @@
   body.dark .batch-dropzone:hover, body.dark .batch-dropzone.dragover { border-color: #93b4ef; background: #1e2a40; color: #93b4ef; }
   body.dark .batch-dropzone-hint { color: #4b5563; }
 
-  /* Batch shared utilities */
   .batch-loading { font-size: 12px; color: var(--text-muted); padding: 16px 0; text-align: center; }
   .batch-empty   { font-size: 12px; color: var(--text-muted); padding: 16px 0; text-align: center; }
   body.dark .batch-loading, body.dark .batch-empty { color: #4b5563; }
@@ -669,7 +663,6 @@
   .batch-preview-text { font-size: 11.5px; color: #16a34a; font-weight: 600; margin-top: 5px; }
   body.dark .batch-preview-text { color: #4ade80; }
 
-  /* Batch candidate rows */
   .batch-candidate-row {
     display: flex; align-items: flex-start; gap: 8px;
     background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
@@ -687,7 +680,6 @@
   body.dark .batch-candidate-name { color: #e5e7eb; }
   body.dark .batch-candidate-meta { color: var(--text-muted); }
 
-  /* Batch status badges */
   .batch-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 10px; }
   .batch-badge.ok     { background: #dcfce7; color: #166534; }
   .batch-badge.warn   { background: #fef3c7; color: #92400e; }
@@ -710,14 +702,12 @@
   body.dark .batch-badge.green-sm{ background: #0d2a1a; color: #4ade80; }
   body.dark .batch-badge.err-sm  { background: #2a0f0f; color: #f87171; }
 
-  /* Batch action bar */
   .batch-action-bar {
     display: flex; gap: 8px; margin-bottom: 10px; align-items: center;
   }
   .batch-progress-text { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
   body.dark .batch-progress-text { color: #4b5563; }
 
-  /* Batch link job inline */
   .batch-link-job-row {
     background: #fffbeb; border: 1px solid #fde68a; border-radius: 7px;
     padding: 10px 12px; margin-bottom: 10px;
@@ -728,7 +718,6 @@
   .batch-link-job-controls { display: flex; gap: 6px; }
   .batch-link-job-controls .batch-select { flex: 1; }
 
-  /* Batch review queue (one-at-a-time) */
   .batch-review-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 11px 12px; margin-bottom: 8px;
   }
@@ -754,32 +743,28 @@
   body.dark .batch-review-body:focus { border-color: #93b4ef; }
   body.dark .batch-review-counter { color: #4b5563; }
   body.dark .batch-review-done { color: #4ade80; }
-  /* ── Follow-Up filter bar ── */
+
   .batch-filter-bar { display:flex; gap:5px; align-items:center; margin-bottom:8px; flex-wrap:wrap; margin-top:4px; }
   .batch-filter-btn { padding:3px 10px; border:1.5px solid var(--border); border-radius:20px; background:#f9fafb; font-size:10.5px; font-weight:600; color:#6b7280; cursor:pointer; transition:all 0.12s; }
   .batch-filter-btn.active { background:#eff6ff; border-color:#3b82f6; color:#1d4ed8; }
   .batch-filter-btn:hover:not(.active) { border-color:#d1d5db; }
   body.dark .batch-filter-btn { background:#1a1d2e; border-color:#2d3148; color:#9ca3af; }
   body.dark .batch-filter-btn.active { background:#1e3a5f; border-color:#3b82f6; color:#93b4ef; }
-  /* ── Followed-Up status badge ── */
+
   .batch-badge.purple-sm { background:#f3e8ff; color:#7e22ce; font-size:10px; padding:1px 5px; }
   body.dark .batch-badge.purple-sm { background:#2d1b4e; color:#c084fc; }
-  /* ── Follow-Up action button modifier ── */
   .batch-followup-btn { border-color:#7e22ce !important; color:#7e22ce !important; }
   .batch-followup-btn:hover { background:#f3e8ff !important; }
   body.dark .batch-followup-btn { border-color:#c084fc !important; color:#c084fc !important; }
   body.dark .batch-followup-btn:hover { background:#2d1b4e !important; }
-  /* ── Responded action button ── */
   .batch-responded-btn { border-color:#16a34a !important; color:#16a34a !important; }
   .batch-responded-btn:hover { background:#dcfce7 !important; }
   body.dark .batch-responded-btn { border-color:#4ade80 !important; color:#4ade80 !important; }
   body.dark .batch-responded-btn:hover { background:#0d2a1a !important; }
-  /* ── Days-since-sent badge ── */
   .batch-days-badge { display:inline-block; font-size:9.5px; font-weight:600; padding:1px 6px; border-radius:10px; background:#f3f4f6; color:#6b7280; margin-left:4px; white-space:nowrap; vertical-align:middle; }
   .batch-days-badge.overdue { background:#fef3c7; color:#b45309; }
   body.dark .batch-days-badge { background:#252836; color: var(--text-muted); }
   body.dark .batch-days-badge.overdue { background:#2a1f0a; color: #fbbf24; }
-  /* ── Responded status badge ── */
   .batch-badge.teal-sm { background:#d1fae5; color:#065f46; font-size:10px; padding:1px 5px; }
   body.dark .batch-badge.teal-sm { background:#042f2e; color:#34d399; }
 
@@ -791,7 +776,6 @@
   body.dark .batch-conf-badge.mid  { background: #2a1f0a; color: #fbbf24; }
   body.dark .batch-conf-badge.low  { background: #2a0f0f; color: #f87171; }
 
-  /* Previous campaigns toggle */
   .batch-prev-toggle { font-size: 11px; color: var(--accent-mid); cursor: pointer; text-decoration: underline; display: inline-block; margin-bottom: 10px; }
   .batch-prev-toggle:hover { color: #0855a5; }
   body.dark .batch-prev-toggle { color: #93b4ef; }
@@ -819,7 +803,7 @@
   body.dark .batch-resp-rate.ok  { color: #4ade80; }
   body.dark .batch-resp-rate.mid { color: #fbbf24; }
   body.dark .batch-resp-rate.low { color: var(--text-muted); }
-  /* ── Automatic reply detection settings ── */
+
   .reply-provider-row { padding:10px 0; }
   .reply-provider-row + .reply-provider-row { border-top:1px solid #f3f4f6; }
   .reply-provider-name { font-size:13px; font-weight:600; color:#111827; margin-bottom:3px; }
@@ -832,7 +816,7 @@
   body.dark .reply-provider-row + .reply-provider-row { border-top-color:#2d3148; }
   body.dark .reply-client-input { background:#252836; border-color:#3a3d52; color:#e5e7eb; }
   body.dark .reply-setup-note { background:#1a1d2e; border-color:#2d3148; }
-  /* ── Discovery path ── */
+
   .disc-steps { display:flex; flex-wrap:wrap; align-items:center; gap:3px; font-size:11px; }
   .disc-step { display:inline-flex; align-items:center; gap:3px; background:#f3f4f6; border-radius:5px; padding:2px 7px; color:#374151; }
   .disc-step.hit  { background:#dcfce7; color:#15803d; }
@@ -858,7 +842,7 @@
 <div id="loginScreen">
   <div class="login-logo">
     <div class="logo-icon">&#x1F4BC;</div>
-    <h2>OutreachAI</h2>
+    <h2>SourcedOut AI</h2>
     <p>Draft outreach in seconds</p>
   </div>
 
@@ -991,24 +975,31 @@
 <!-- ── Main App ── -->
 <div id="mainApp" style="display:none;">
 
+  <!-- Header: row 1 = brand + icon buttons -->
   <div class="header">
-    <span>&#x1F4BC;</span>
-    <h1>OutreachAI</h1>
-    <button class="settings-icon-btn" id="diagnosticsIconBtn" title="Diagnostics" aria-label="Diagnostics" style="margin-right:6px;">&#x1F50D;</button>
-    <button class="settings-icon-btn" id="settingsIconBtn" title="Settings" aria-label="Settings">&#x2699;&#xFE0F;</button>
-  </div>
+    <div class="header-row-1">
+      <span style="display:flex;align-items:center;gap:6px;">
+        <span>&#x1F4BC;</span>
+        <h1>SourcedOut AI</h1>
+      </span>
+      <div class="header-actions">
+        <button class="settings-icon-btn" id="diagnosticsIconBtn" title="Diagnostics" aria-label="Diagnostics">&#x1F50D;</button>
+        <button class="settings-icon-btn" id="settingsIconBtn" title="Settings" aria-label="Settings">&#x2699;&#xFE0F;</button>
+      </div>
+    </div>
 
-  <div class="tabs">
-    <div class="tab active" data-tab="outreach">&#x2709;&#xFE0F; Outreach</div>
-    <div class="tab" data-tab="job">&#x1F4CB; Job</div>
-    <div class="tab tab-accent" id="campaignsTab">&#x1F4E4; Campaigns<span id="campaignsOverdueBadge" style="display:none;background:#f59e0b;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px;vertical-align:middle;">0</span></div>
-    <div class="tab" data-tab="diagnostics" style="display:none;">&#x1F50D; Diagnostics</div>
+    <!-- Header: row 2 = tabs -->
+    <div class="tabs">
+      <div class="tab active" data-tab="outreach">&#x2709;&#xFE0F; Outreach</div>
+      <div class="tab" data-tab="job">&#x1F4BB; Job</div>
+      <div class="tab tab-accent" id="campaignsTab">&#x1F4E4; Campaigns<span id="campaignsOverdueBadge" style="display:none;background:#f59e0b;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px;vertical-align:middle;">0</span></div>
+      <div class="tab" data-tab="diagnostics" style="display:none;">&#x1F50D; Diagnostics</div>
+    </div>
   </div>
 
   <!-- ════════════ OUTREACH TAB ════════════ -->
   <div class="tab-content active" id="tab-outreach">
 
-    <!-- Candidate summary card (populated after detection/enrichment) -->
     <div id="candidateSummary" class="card candidate-summary">
       <div class="cs-header">
         <div style="min-width:0;flex:1;">
@@ -1036,7 +1027,6 @@
           </div>
           <div id="csNoEmail" style="display:none;"><span class="cs-no-email">No email found</span></div>
         </div>
-        <!-- Confidence bar — moved here from the old redundant "Contact found" card -->
         <div id="csConfidenceRow" style="display:none;margin-top:6px;">
           <div class="confidence-row" style="margin-bottom:0;">
             <span class="confidence-label">Confidence</span>
@@ -1050,9 +1040,7 @@
       </div>
     </div>
 
-    <!-- Input section -->
     <div class="card" id="inputSection">
-      <!-- Outreach type toggle -->
       <div class="outreach-type-row">
         <button class="outreach-type-btn active" id="btnOutreachNew">New Outreach</button>
         <button class="outreach-type-btn" id="btnOutreachFollowUp">Follow-Up</button>
@@ -1063,7 +1051,6 @@
         <span id="profilePillText">LinkedIn profile detected</span>
       </div>
 
-      <!-- Tone pills -->
       <div class="tone-pills-row">
         <span class="tone-pills-label">Tone</span>
         <button class="tone-pill" id="tonePillFormal" data-tone="formal">Formal</button>
@@ -1103,8 +1090,6 @@
       <div class="progress-step"><div class="progress-dot" id="dotDraft"></div><div class="progress-label" id="lblDraft">Writing draft…</div></div>
     </div>
 
-    <!-- resultSummary removed — name/email/company/title now in candidateSummary card above;
-         confidence bar moved into candidateSummary (#csConfidenceRow). -->
     <div id="resultSummary" style="display:none;">
       <span id="resName" style="display:none;"></span>
       <span id="resEmail" style="display:none;"></span>
@@ -1135,7 +1120,6 @@
       <button class="btn btn-danger" id="authRecoveryButton" style="display:none;">Sign out and sign in again</button>
     </div>
 
-    <!-- Saved profiles (collapsible) -->
     <div id="savedProfilesSection" style="margin-top:4px;">
       <span class="saved-profiles-toggle" id="savedProfilesToggle">Saved profiles</span>
       <div id="savedProfilesWrap" style="display:none;margin-top:6px;">
@@ -1193,7 +1177,6 @@
   <!-- ════════════ DIAGNOSTICS TAB ════════════ -->
   <div class="tab-content" id="tab-diagnostics">
     <div class="card">
-      <!-- Version info -->
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #e5e7eb;">
         <div>
           <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">Extension</div>
@@ -1212,40 +1195,33 @@
       <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;">Last scraped company</div>
       <div id="diagLastCompany" style="font-size:13px;color:#6b7280;margin-bottom:16px;padding:8px 12px;background:#f9fafb;border-radius:6px;">—</div>
       
-      <!-- Scraper path (always visible) -->
       <div style="margin-bottom:16px;">
         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">Scraper path</div>
         <div id="diagScraperPath" style="font-size:11px;"></div>
       </div>
       
-      <!-- Waterfall path (always visible) -->
       <div style="margin-bottom:16px;">
         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">Waterfall path</div>
         <div id="diagWaterfallPath" style="font-size:11px;"></div>
       </div>
       
-      <!-- Email discovery (always visible when present) -->
       <div id="diagDiscoveryField" style="display:none;margin-bottom:16px;">
         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">How the email was found</div>
         <div id="diagDiscovery" style="font-size:11px;"></div>
       </div>
       
-      <!-- Known patterns -->
       <div id="diagPatternsField" style="display:none;margin-bottom:16px;">
         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">Known email patterns</div>
         <div id="diagPatterns" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
       </div>
       
-      <!-- Recent lookups -->
       <div id="diagHistorySection" style="display:none;margin-bottom:16px;">
         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">Recent lookups</div>
         <div id="diagHistory"></div>
       </div>
       
-      <!-- Version mismatch warning -->
       <div id="diagMismatch" style="display:none;margin-bottom:12px;padding:8px 10px;border-radius:7px;font-size:11px;background:#fffbeb;color:#92400e;border:1px solid #fde68a;"></div>
       
-      <!-- Action buttons -->
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn btn-ghost" id="diagRefresh" style="font-size:12px;">↻ Refresh</button>
         <button class="btn btn-ghost" id="diagCopyDebug" style="font-size:12px;" title="Copy full waterfall + scraper trace as JSON">⎘ Copy debug</button>
@@ -1334,7 +1310,6 @@
       <div class="card">
         <div class="helper-text" style="margin-bottom:12px;">Connect your inbox so SourcedOut can automatically mark candidates as "Responded" when they reply to your outreach. Replies are checked each time you open a campaign — nothing is stored on our servers.</div>
 
-        <!-- Gmail row -->
         <div class="reply-provider-row">
           <div class="reply-provider-name">Gmail</div>
           <div class="reply-provider-status disconnected" id="gmailConnectStatus">○ Not connected</div>
@@ -1347,7 +1322,6 @@
           </div>
         </div>
 
-        <!-- Outlook row -->
         <div class="reply-provider-row">
           <div class="reply-provider-name">Outlook</div>
           <div class="reply-provider-status disconnected" id="outlookConnectStatus">○ Not connected</div>
@@ -1360,7 +1334,6 @@
           </div>
         </div>
 
-        <!-- Setup instructions -->
         <div class="reply-setup-note">
           <div class="field-label" style="margin-bottom:5px;">One-time setup</div>
           <div class="helper-text" style="margin-bottom:4px;">Your redirect URI (copy this): <code id="extensionRedirectUri" style="font-size:10px;word-break:break-all;background:#e5e7eb;padding:1px 4px;border-radius:3px;"></code></div>
@@ -1405,7 +1378,6 @@
 
     <div class="batch-body" id="batchBody">
 
-      <!-- Previous campaigns (collapsed) -->
       <span class="batch-prev-toggle" id="batchPrevToggle">Previous campaigns</span>
       <div id="batchPrevCampaigns" style="display:none;margin-bottom:12px;">
         <div id="batchCampaignList">
@@ -1413,7 +1385,6 @@
         </div>
       </div>
 
-      <!-- Step 1: Link the Job -->
       <div class="batch-step" id="batchStep1">
         <div class="batch-step-title"><span class="batch-step-num" id="batchStepNum1">1</span> Select a job</div>
         <div class="batch-section-card">
@@ -1426,7 +1397,6 @@
         </div>
       </div>
 
-      <!-- Step 2: Import candidates -->
       <div class="batch-step" id="batchStep2">
         <div class="batch-step-title"><span class="batch-step-num" id="batchStepNum2">2</span> Import candidates</div>
         <div id="batchDropzone" class="batch-dropzone" tabindex="0">
@@ -1444,7 +1414,6 @@
         </div>
       </div>
 
-      <!-- Step 3: Processing List (hidden until import) -->
       <div class="batch-step" id="batchStep3" style="display:none;">
         <div class="batch-step-title"><span class="batch-step-num" id="batchStepNum3">3</span> Process candidates</div>
 
@@ -1467,12 +1436,10 @@
           <span id="batchDraftProgress" class="batch-progress-text"></span>
         </div>
 
-        <!-- Reply-check progress indicator (hidden until active) -->
         <div id="batchReplyCheckStatus" style="display:none;text-align:center;font-size:11px;color:#6b7280;padding:5px 0;border-top:1px solid #f3f4f6;margin-bottom:2px;">
           Checking inbox for new replies…
         </div>
 
-        <!-- Follow-up filter — shown once any candidate has been sent/followed-up/responded -->
         <div class="batch-filter-bar" id="batchFilterBar" style="display:none;">
           <button class="batch-filter-btn active" data-filter="all">All</button>
           <button class="batch-filter-btn" data-filter="needs_followup">Needs Follow-Up</button>
@@ -1485,7 +1452,6 @@
         </div>
       </div>
 
-      <!-- Step 4: Review Queue (hidden until drafts exist) -->
       <div class="batch-step" id="batchStep4" style="display:none;">
         <div class="batch-step-title"><span class="batch-step-num" id="batchStepNum4">4</span> Review &amp; send</div>
         <div id="batchReviewCounter" class="batch-review-counter"></div>
