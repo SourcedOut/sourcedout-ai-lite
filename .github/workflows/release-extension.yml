@@ -1,0 +1,30 @@
+name: Build and Release Extension
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'extension/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Zip extension
+        run: |
+          cd extension
+          zip -r ../sourcedout-extension.zip .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release-${{ github.sha }}
+          name: Extension Update (Commit ${{ github.sha }})
+          files: sourcedout-extension.zip
