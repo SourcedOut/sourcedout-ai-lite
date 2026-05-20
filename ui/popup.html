@@ -63,20 +63,34 @@
 
   /* ── Tabs ── */
   .tabs {
-    display: flex; background: var(--surface);
+    display: flex;
+    background: var(--surface);
+    padding: 6px 8px;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
   }
   .tab {
-    flex: 1; text-align: center; padding: 9px 2px; font-size: 11px; cursor: pointer;
-    color: var(--text-muted); transition: all 0.15s; user-select: none;
-    border-bottom: 2px solid transparent;
+    flex: 1;
+    text-align: center;
+    padding: 7px 4px;
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 0.15s;
+    user-select: none;
+    border-radius: 8px;
+    border-bottom: none;
   }
   .tab:hover { color: var(--text); background: var(--surface2); }
   .tab.active {
-    color: var(--accent-mid); border-bottom-color: var(--accent-mid); font-weight: 600;
+    color: var(--accent-mid);
+    background: var(--surface2);
+    font-weight: 600;
+    border: 1px solid var(--border-bright);
   }
   .tab.tab-accent { font-weight: 600; border-left: 1px solid var(--border); }
   .tab.tab-accent:hover { background: var(--surface2); }
-  .tab.tab-accent.active { color: var(--accent-mid); border-bottom-color: var(--accent-mid); }
+  .tab.tab-accent.active { color: var(--accent-mid); border: 1px solid var(--border-bright); }
 
   /* ── Tab content ── */
   .tab-content { display: none; padding: 12px; }
