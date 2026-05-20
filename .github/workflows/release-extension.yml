@@ -17,10 +17,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Zip extension
+      - name: Create Extension Zip
         run: |
-          cd extension
-          zip -r ../sourcedout-extension.zip .
+          git archive --format=zip -o sourcedout-extension.zip HEAD
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
