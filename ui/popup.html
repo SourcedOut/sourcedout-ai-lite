@@ -150,10 +150,10 @@
 
   /* ── Vertical step tracker ── */
   .progress-step {
-    display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; position: relative;
+    display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; position: relative;
   }
   .progress-step:not(:last-child)::before {
-    content: ''; position: absolute; left: 5px; top: 22px; bottom: -6px; width: 2px;
+    content: ''; position: absolute; left: 6px; top: 24px; bottom: -8px; width: 2px;
     background: var(--border); z-index: 0;
   }
   .progress-step.step-active:not(:last-child)::before,
@@ -166,8 +166,9 @@
     transition: all 0.3s;
   }
   .progress-dot.active {
+    width: 14px; height: 14px; margin-left: -1px;
     background: var(--grad);
-    box-shadow: 0 0 12px rgba(224, 90, 24, 0.6);
+    box-shadow: 0 0 14px rgba(224, 90, 24, 0.7);
     animation: glow-pulse 1.4s ease-in-out infinite;
   }
   .progress-dot.done {
@@ -179,16 +180,24 @@
     font-size: 8px; color: white; font-weight: 700;
   }
   @keyframes glow-pulse {
-    0%, 100% { box-shadow: 0 0 12px rgba(224, 90, 24, 0.6); }
-    50% { box-shadow: 0 0 20px rgba(224, 90, 24, 0.9); }
+    0%, 100% { box-shadow: 0 0 14px rgba(224, 90, 24, 0.7); }
+    50% { box-shadow: 0 0 22px rgba(224, 90, 24, 0.9); }
   }
   .progress-label { font-size: 12px; color: var(--text-faint); padding-top: 1px; }
-  .progress-label.active { color: white; font-weight: 500; }
+  .progress-label.active { font-size: 13px; color: white; font-weight: 700; }
   .progress-label.done { color: var(--text-muted); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .spinner {
     width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent-mid);
-    border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; margin-right: 6px;
+    border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle;
+  }
+
+  /* ── Working Button ── */
+  .btn-working {
+    width: 100%; padding: 14px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border-bright);
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    margin-top: 12px;
   }
 
   /* ── Result summary ── */
@@ -230,13 +239,13 @@
 
   /* ── Profile detected pill ── */
   .profile-detected-pill {
-    display: flex; align-items: center; gap: 6px;
-    background: var(--surface2); border: 1px solid var(--border-bright); border-radius: 20px;
-    padding: 5px 11px; margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--text);
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: var(--grad); border: none; border-radius: 24px;
+    padding: 12px 18px; margin-bottom: 12px; font-size: 14px; font-weight: 700; color: white;
+    box-shadow: 0 4px 12px rgba(201, 58, 10, 0.3);
   }
   .profile-pill-dot {
-    width: 7px; height: 7px; border-radius: 50%; background: #4ade80; flex-shrink: 0;
-    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.2);
+    width: 8px; height: 8px; border-radius: 50%; background: white; flex-shrink: 0;
   }
 
   /* ── Customize toggle ── */
@@ -422,10 +431,13 @@
   body.dark .email-type-badge.work     { background:#0d2a1a; color:#4ade80; }
   body.dark .email-type-badge.personal { background:#2a1f0a; color:#fbbf24; }
   /* ── Outreach type toggle ── */
-  .outreach-type-row { display:flex; gap:6px; margin-bottom:10px; }
-  .outreach-type-btn { flex:1; padding:6px 8px; border:1.5px solid var(--border); border-radius:8px; background:#f9fafb; font-size:11.5px; font-weight:600; color:#6b7280; cursor:pointer; transition:all 0.12s; text-align:center; }
-  .outreach-type-btn.active { background:#eff6ff; border-color:#3b82f6; color:#1d4ed8; }
-  .outreach-type-btn:hover:not(.active) { border-color:#d1d5db; background:#f3f4f6; color:#374151; }
+  .outreach-type-row { display:flex; gap:6px; margin-bottom:12px; }
+  .outreach-type-btn { 
+    flex:1; padding:14px 8px; border:none; border-radius:10px; background:var(--surface); 
+    font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; transition:all 0.15s; text-align:center; 
+  }
+  .outreach-type-btn.active { background:var(--grad); color:white; }
+  .outreach-type-btn:hover:not(.active) { background:var(--surface2); color:var(--text); }
   body.dark .outreach-type-btn { background:var(--surface); border-color:#2d3148; color:#9ca3af; }
   body.dark .outreach-type-btn.active { background:var(--surface2); border-color:#3b82f6; color:#93b4ef; }
   body.dark .outreach-type-btn:hover:not(.active) { background:#1e2235; border-color:#3d4165; color:#d1d5db; }
@@ -1059,7 +1071,7 @@
 
       <div id="profilePill" class="profile-detected-pill" style="display:none;">
         <span class="profile-pill-dot"></span>
-        <span id="profilePillText">LinkedIn profile detected</span>
+        <span id="profilePillText" style="font-weight: 700;">LinkedIn profile detected</span>
       </div>
 
       <div class="tone-pills-row">
@@ -1096,9 +1108,14 @@
     <div id="statusMessage"></div>
 
     <div id="progressSection" style="display:none;" class="card">
-      <div class="progress-step"><div class="progress-dot" id="dotEnrich"></div><div class="progress-label" id="lblEnrich">Looking up contact details…</div></div>
-      <div class="progress-step"><div class="progress-dot" id="dotCompany"></div><div class="progress-label" id="lblCompany">Checking company signals…</div></div>
+      <div class="progress-step"><div class="progress-dot" id="dotEnrich"></div><div class="progress-label" id="lblEnrich">Finding contact details…</div></div>
+      <div class="progress-step"><div class="progress-dot" id="dotCompany"></div><div class="progress-label" id="lblCompany">Researching company signals…</div></div>
       <div class="progress-step"><div class="progress-dot" id="dotDraft"></div><div class="progress-label" id="lblDraft">Writing draft…</div></div>
+      
+      <div class="btn-working">
+        <div class="spinner"></div>
+        <span>Working…</span>
+      </div>
     </div>
 
     <div id="resultSummary" style="display:none;">
