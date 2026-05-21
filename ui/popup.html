@@ -85,10 +85,11 @@
   }
   .tab:hover { color: var(--text); background: var(--surface2); }
   .tab.active {
-    color: var(--accent-mid);
-    background: var(--surface2);
-    font-weight: 600;
-    border: 1px solid var(--border-bright);
+    background: #e05a18;
+    color: #ffffff;
+    font-weight: 700;
+    border-radius: 8px;
+    border: none;
   }
 
   /* ── Tab content ── */
@@ -346,7 +347,6 @@
   body.dark .tabs { background: var(--surface); border-color: #2d3148; }
   body.dark .tab { color: var(--text-muted); }
   body.dark .tab:hover { background: #1f2235; color: #93b4ef; }
-  body.dark .tab.active { color: #93b4ef; border-color: #93b4ef; }
   body.dark .card { background: var(--surface); border-color: #2d3148; }
   body.dark .card-label { color: #4b5563; }
   body.dark input[type="text"], body.dark input[type="email"], body.dark input[type="password"], body.dark textarea, body.dark select { background: #252836; border-color: #3a3d52; color: #e5e7eb; }
@@ -458,7 +458,11 @@
   .cs-email-fields { display:flex; flex-direction:column; gap:3px; min-width:0; }
   .cs-email-field-row { display:flex; align-items:center; gap:5px; min-width:0; overflow:hidden; }
   .cs-email-field-label { font-size:10px; font-weight:700; padding:1px 6px; border-radius:8px; flex-shrink:0; min-width:48px; text-align:center; }
-  .cs-email-field-label.work     { background:#dcfce7; color:#166534; }
+  .cs-email-field-label.work {
+    background: #1a1a1a;
+    color: #e05a18;
+    border: 1px solid #e05a18;
+  }
   .cs-email-field-label.personal { background:#fef3c7; color:#92400e; }
   .cs-email-field-value { font-size:12px; font-weight:500; color:#111827; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; cursor:default; }
   .cs-email-field-value:hover { color:#0a66c2; }
@@ -472,7 +476,6 @@
   body.dark .cs-collapse-btn:hover { color:#d1d5db; }
   body.dark .cs-email-field-value { color:#e5e7eb; }
   body.dark .cs-email-field-value:hover { color:#93b4ef; }
-  body.dark .cs-email-field-label.work     { background:#0d2a1a; color:#4ade80; }
   body.dark .cs-email-field-label.personal { background:#2a1f0a; color:#fbbf24; }
   body.dark .cs-email-copy { color:#4b5563; }
   body.dark .cs-email-copy:hover { color:#818cf8; }
