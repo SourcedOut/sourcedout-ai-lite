@@ -30,7 +30,7 @@
 
   /* ── Header ── */
   .header {
-    background: var(--bg);
+    background: #0a0a0a;
     border-bottom: 1px solid var(--border);
   }
   .header-row-1 {
@@ -38,24 +38,26 @@
     padding: 10px 14px; border-bottom: 1px solid var(--border);
   }
   .header h1 {
-    font-size: 15px; font-weight: 700;
-    background: var(--grad);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: #e05a18;
+    font-size: 15px;
+    font-weight: 700;
   }
   .header-actions {
     display: flex; gap: 6px; align-items: center;
   }
   .settings-icon-btn {
-    background: transparent; border: 1px solid var(--border);
-    color: var(--text-muted); border-radius: 50%; width: 28px; height: 28px;
+    background: transparent;
+    border: 1px solid #2a2a2a;
+    color: #888888;
+    border-radius: 50%; width: 28px; height: 28px;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; font-size: 14px; padding: 0; transition: all 0.15s;
   }
   .settings-icon-btn:hover {
-    background: var(--surface); border-color: var(--border-bright);
-    color: var(--text); transform: rotate(20deg);
+    border-color: #e05a18;
+    color: #ffffff;
+    background: #1a1a1a;
+    transform: rotate(20deg);
   }
   .settings-icon-btn.active {
     background: var(--surface2); border-color: var(--accent-mid); color: var(--accent-amber);
@@ -1002,7 +1004,7 @@
   <div class="header">
     <div class="header-row-1">
       <span style="display:flex;align-items:center;gap:6px;">
-        <span>&#x1F4BC;</span>
+        <span>📦</span>
         <h1>SourcedOut AI</h1>
       </span>
       <div class="header-actions">
