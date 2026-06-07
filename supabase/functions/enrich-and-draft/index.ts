@@ -128,8 +128,29 @@ function maskEmail(e: string | null | undefined): string {
   return `${head}@${d}`
 }
 
+// ── Credit refund ───────────────────────────────────────────────────────────────
+// Returns a lookup credit that was deducted up-front when a run ultimately produces
+// nothing usable (NOT_ENOUGH_DATA). Best-effort and non-fatal: prefers an atomic
+// refund_credit RPC if one exists, otherwise decrements credits.lookups_used directly
+// (guarded so it never goes negative).
+async function refundCredit(db: any, userId: string | null | undefined, reason: string): Promise<void> {
+  if (!db || !userId) return
+  try {
+    const { error } = await db.rpc('refund_credit', { p_user_id: userId })
+    if (!error) { console.log(`[refundCredit] refunded via RPC (reason=${reason})`); return }
+  } catch { /* RPC may not exist — fall back to direct decrement */ }
+  try {
+    const { data: c } = await db.from('credits').select('lookups_used').eq('user_id', userId).maybeSingle()
+    const used = typeof c?.lookups_used === 'number' ? c.lookups_used : 0
+    if (used > 0) {
+      await db.from('credits').update({ lookups_used: used - 1 }).eq('user_id', userId)
+      console.log(`[refundCredit] refunded via table decrement (reason=${reason})`)
+    }
+  } catch (e) { console.warn('[refundCredit] non-fatal:', e) }
+}
+
 // ── Step logger ────────────────────────────────────────────────────────────────
-type StepStatus = 'HIT' | 'OK' | 'SKIP' | 'MISS' | 'FAIL' | 'PERSONAL_HUNTING'
+type StepStatus = 'HIT' | 'OK' | 'SKIP' | 'MISS' | 'FAIL' | 'PERSONAL_HUNTING' | 'CATCHALL' | 'RISKY_FALLBACK'
 interface StepRecord {
   step: string
   status: StepStatus
@@ -163,7 +184,14 @@ function makeStepLogger(db: any, userId: string | null, correlationId: string, a
         provider: name,
         request_payload: { correlation_id: correlationId, action },
         response_payload: { status: outcome.status, reason: outcome.reason || null, meta: rec.meta || null },
-        status_code: outcome.status === 'OK' || outcome.status === 'HIT' ? 200 : outcome.status === 'SKIP' ? 204 : outcome.status === 'MISS' ? 404 : 500,
+        status_code:
+          outcome.status === 'OK' || outcome.status === 'HIT' ? 200
+          : outcome.status === 'SKIP' ? 204
+          : outcome.status === 'MISS' ? 404
+          // Informational / uncertain-but-usable outcomes are not failures — keep them
+          // out of the 500 bucket so success/failure analytics stay meaningful.
+          : outcome.status === 'CATCHALL' || outcome.status === 'RISKY_FALLBACK' || outcome.status === 'PERSONAL_HUNTING' ? 200
+          : 500,
       })
     } catch {}
     return outcome
@@ -1063,6 +1091,25 @@ async function myEmailVerifierValidate(
   return { status, raw }
 }
 
+// ── Catch-all confirmation probe ────────────────────────────────────────────────
+// A single "all candidates risky" result is ambiguous: MEV reports 'risky' both for
+// genuine catch-all (accept-all) servers AND for transient conditions (greylisting,
+// rate-limiting, temporary SMTP failures). Before branding a whole domain catch-all —
+// a sticky, expensive classification that routes every future lookup straight to the
+// paid provider — probe it with a nonsense local-part that cannot belong to a real
+// mailbox. If the server still accepts it (valid/risky) the domain is truly catch-all;
+// if it bounces ('invalid') the earlier risky results were transient.
+async function confirmCatchAll(domain: string | null, mevKey: string): Promise<boolean> {
+  if (!domain || !mevKey) return false
+  const nonce = `no-reply-${Math.random().toString(36).slice(2, 12)}-zzq`
+  try {
+    const v = await myEmailVerifierValidate(`${nonce}@${domain}`, mevKey)
+    return v.status === 'valid' || v.status === 'risky'
+  } catch {
+    return false
+  }
+}
+
 // ── OSINT Search helpers ──────────────────────────────────────────────────────
 type SearchEvidence = {
   provider: 'google' | 'brave'
@@ -1740,15 +1787,23 @@ async function runEmailWaterfall(opts: {
     // Write is_catchall=true immediately and skip steps 5-12 (Google, Brave, ensemble, PDL).
     // Jump to FullEnrich (authoritative source) to avoid wasting ~80% of API calls.
     if (r.riskyFallback && r.statuses.length > 0 && r.statuses.every(s => s === 'risky' || s === 'error')) {
+      // Corroborate before branding the domain catch-all (see confirmCatchAll). A
+      // nonsense-local probe must also be accepted; if it bounces, the risky results
+      // were transient and we should keep working the normal waterfall.
+      const reallyCatchAll = await confirmCatchAll(workingDomain, myEmailVerifierKey)
+      if (!reallyCatchAll) {
+        console.log(`[myemailverifier_haiku] all-risky but catch-all probe was negative — treating as transient, continuing waterfall`)
+        return { status: 'MISS', reason: 'risky_unconfirmed_catchall', meta: { tried: r.tried, statuses: r.statuses, accepted: null, probe: 'negative' } }
+      }
       haikuRiskyFallback = r.riskyFallback
       isCatchallDomain = true
-      console.log(`[myemailverifier_haiku] catch-all domain detected at Step 4 — will route to FullEnrich: ${maskEmail(r.riskyFallback)}`)
+      console.log(`[myemailverifier_haiku] catch-all confirmed by probe at Step 4 — will route to FullEnrich: ${maskEmail(r.riskyFallback)}`)
       // Write is_catchall=true to DB immediately (not at tail end)
       if (db && workingDomain) {
         await upsertEmailPattern(db, workingDomain, r.riskyFallback, fullName, true)
         console.log(`[myemailverifier_haiku] marked domain as catch-all in DB: ${workingDomain}`)
       }
-      return { status: 'CATCHALL', reason: 'routing_to_fullenrich', meta: { tried: r.tried, statuses: r.statuses, accepted: null, risky_fallback: maskEmail(r.riskyFallback) } }
+      return { status: 'CATCHALL', reason: 'routing_to_fullenrich', meta: { tried: r.tried, statuses: r.statuses, accepted: null, risky_fallback: maskEmail(r.riskyFallback), probe: 'positive' } }
     }
     if (r.lastError && r.tried.length === 1) return { status: 'FAIL', reason: r.lastError }
     return { status: 'MISS', reason: 'no_valid', meta: { tried: r.tried, statuses: r.statuses, accepted: null, risky_fallback: null } }
@@ -3615,7 +3670,11 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
       await step('fullenrich_v2', async () => ({ status: 'SKIP', reason: `email_found_via_${waterfallSource}` }))
     }
 
-    if (!fullName) return json({ error: { code: 'NOT_ENOUGH_DATA', message: 'Could not identify this person. Try again or check the LinkedIn profile URL.' }, debug: { correlationId, records } }, 422)
+    if (!fullName) {
+      // Credit was deducted up-front but we could not identify the person — refund it.
+      await refundCredit(db, user.id, 'not_enough_data_no_name')
+      return json({ error: { code: 'NOT_ENOUGH_DATA', message: 'Could not identify this person. Try again or check the LinkedIn profile URL. No lookup credit was charged.' }, debug: { correlationId, records } }, 422)
+    }
 
     if (emailDomain && !company) {
       try {
@@ -3658,6 +3717,12 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
     let status: 'success' | 'partial' | 'not_enough_data' = 'success'
     if (!selectedEmail && !company) status = 'not_enough_data'
     else if (!selectedEmail || titleConfidence < 0.3) status = 'partial'
+
+    // The credit was deducted up-front (before the waterfall). If the run produced
+    // neither an email nor a company, the user got nothing usable — refund it.
+    if (status === 'not_enough_data') {
+      await refundCredit(db, user.id, 'not_enough_data_result')
+    }
 
     let draft: { subject: string; body: string } | null = null
     if (status !== 'not_enough_data' && anthropicKey) {
