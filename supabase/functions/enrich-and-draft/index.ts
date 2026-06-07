@@ -1346,7 +1346,7 @@ async function runEmailEnsemble(
 
   if (!fullName) return { candidates: [], usedModels }
 
-  const basePrompt = `You are ranking likely WORK email addresses for a single person, based ONLY on the evidence below.
+  const basePrompt = `You are generating likely WORK email addresses for a single person. Use both the evidence below AND your general knowledge of how companies format employee email addresses.
 
 Person: ${fullName}
 Company: ${companyName || 'unknown'}
@@ -1354,6 +1354,24 @@ Known work domain: ${domain || 'unknown'}
 
 Evidence (search snippets, patterns, domains, previous candidates):
 ${evidenceJson}
+
+DOMAIN: If the domain above is unknown, infer it from the company name (strip Inc/LLC/Corp/Ltd/Group/Holdings/Partners; try .com first, then .io/.ai/.co for tech, .org for nonprofits).
+
+NAME-HANDLING:
+- Strip diacritics (José → jose, Müller → muller).
+- Hyphenated last names: try both hyphen-kept and hyphen-collapsed.
+- Particles (van, von, de, di, la): try both collapsed and stripped.
+- Drop suffixes (Jr, Sr, II, III, PhD, MD).
+
+PATTERN PRIORS (use to order candidates):
+- Enterprise (1000+): first.last ~52%, flast ~28%, first ~5%
+- Large (201-1000): flast ~43%, first.last ~38%, first ~6%
+- Mid (51-200): flast ~42%, first.last ~30%, first ~17%
+- Small (11-50): first ~42%, flast ~27%, first.last ~23%
+- Micro (1-10): first ~70%, flast ~13%, first.last ~10%
+- Default if size unknown: flast ~40%, first.last ~30%, first ~15%
+
+ALLOWED LOCAL-PART PATTERNS: first.last, flast, first, firstlast, f.last, firstl, first-last, first_last, last.first, lastf
 
 Return ONLY JSON in this exact shape:
 {
@@ -1363,11 +1381,11 @@ Return ONLY JSON in this exact shape:
 }
 
 Rules:
-- Prefer work-appropriate emails (company domain) over personal, unless evidence clearly shows a personal address used for professional outreach.
-- Do not invent domains that are not supported by the evidence.
-- confidence: 0.0–1.0 per candidate.
-- Sort candidates by confidence desc.
-- 1–5 candidates only.`
+- Provide 4–5 candidates, most-likely first.
+- Prefer the company domain. Do not use personal domains (gmail, yahoo, hotmail, outlook.com) unless the evidence explicitly shows that address used for professional outreach.
+- confidence: 0.0–1.0. Use 0.7+ when domain is known and pattern matches evidence; 0.4–0.6 for inferred domain; <0.4 when guessing.
+- All candidates at the same domain.
+- Local-parts lowercase ASCII only.`
 
   const tasks: Promise<void>[] = []
 
@@ -1454,19 +1472,24 @@ Rules:
 
   await Promise.all(tasks)
 
-  // Deduplicate by value (case-insensitive), keep max confidence per email
-  const byValue = new Map<string, EnsembleCandidate>()
+  // Vote aggregation: score = sum of confidences across all models that nominated this address.
+  // A consensus pick (two or three models agreeing) outranks a single high-confidence model.
+  const byValue = new Map<string, { totalConf: number; votes: number; best: EnsembleCandidate }>()
   for (const c of out) {
     const key = c.value.toLowerCase()
     const existing = byValue.get(key)
-    if (!existing || c.confidence > existing.confidence) {
-      byValue.set(key, c)
+    if (!existing) {
+      byValue.set(key, { totalConf: c.confidence, votes: 1, best: c })
+    } else {
+      existing.totalConf += c.confidence
+      existing.votes += 1
+      if (c.confidence > existing.best.confidence) existing.best = c
     }
   }
 
-  const merged = Array.from(byValue.values()).sort(
-    (a, b) => b.confidence - a.confidence,
-  )
+  const merged = Array.from(byValue.values())
+    .sort((a, b) => b.totalConf - a.totalConf)
+    .map(v => ({ ...v.best, confidence: v.totalConf / Math.max(usedModels.length, 1) }))
 
   return { candidates: merged.slice(0, 10), usedModels }
 }
@@ -1896,22 +1919,25 @@ async function runEmailWaterfall(opts: {
     if (mergedSoFar.length === 0 && allPartials.length === 0 && !workingDomain) {
       return { status: 'SKIP', reason: 'no_signal' }
     }
-    const prompt = `You are refining a list of likely work email candidates based on research evidence.
+    const prompt = `You are refining work email candidates from search evidence. Use the evidence AND your knowledge of common corporate email conventions.
 
 Person: ${fullName}
 Company: ${companyName ?? 'unknown'}
 Domain: ${workingDomain ?? 'unknown'}
 
-Evidence collected so far:
-- Exact emails found in web search: ${mergedSoFar.slice(0, 6).map(maskEmail).join(', ') || 'none'}
+Evidence:
+- Emails found in web search: ${mergedSoFar.slice(0, 6).join(', ') || 'none'}
 - Partial emails/patterns in snippets: ${allPartials.slice(0, 5).join(', ') || 'none'}
 - Domains seen in snippets: ${Array.from(new Set(allDomains)).slice(0, 5).join(', ') || 'none'}
 
+NAME-HANDLING: strip diacritics, drop suffixes (Jr/Sr/II/III/PhD), try both collapsed and kept forms for hyphenated last names and particles (van, de, di).
+
+ALLOWED PATTERNS: first.last, flast, first, firstlast, f.last, firstl, first-last, first_last, last.first, lastf
+
 Task:
-1. If domain is still unclear, infer the most likely one from evidence
-2. Produce the top 5 most likely work email candidates using evidence + common patterns
-3. Order by confidence, most likely first
-4. Use these pattern priors (most common first): first.last, flast, first, firstlast, f.last
+1. If domain is unknown, infer it from company name or evidence domains.
+2. Produce 4–5 most likely work email candidates, ordered by confidence (most likely first).
+3. Use the exact emails from evidence as anchors when present — apply the same pattern to this person's name.
 
 Return ONLY JSON:
 {
