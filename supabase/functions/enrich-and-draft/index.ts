@@ -3452,6 +3452,19 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
     }
     // Use only trusted candidates for the waterfall.
     companyCandidates = trustedCandidates
+
+    // Idempotency guard (fail-open): stop two simultaneous in-flight lookups of the
+    // same profile from each deducting a credit. Requires the acquire_lookup_lock RPC
+    // (see supabase/migrations) — if it isn't deployed, the call errors and we proceed
+    // exactly as before. Repeat lookups *after* completion are already served free by
+    // the cache step above, so we rely on the lock's TTL rather than an explicit release.
+    try {
+      const { data: lockOk, error: lockErr } = await db.rpc('acquire_lookup_lock', { p_user_id: user.id, p_linkedin_url: linkedinUrl })
+      if (!lockErr && lockOk === false) {
+        return json({ error: { code: 'LOOKUP_IN_PROGRESS', message: 'This profile is already being looked up. Give it a moment and try again — no extra credit will be charged.' }, debug: { correlationId, records } }, 409)
+      }
+    } catch { /* RPC not deployed — fail open, behave exactly as before */ }
+
     const { data: creditAllowed, error: creditErr } = await db.rpc('deduct_credit', { p_user_id: user.id })
     if (creditErr) {
       console.error('deduct_credit RPC error:', creditErr)
