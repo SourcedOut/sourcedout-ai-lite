@@ -102,13 +102,17 @@ async function scrapeCurrentCompanyRobust() {
     }
   } catch {}
 
-  // 4. Poll up to 2000ms for any company signal to appear.
-  const deadline = Date.now() + 2000
+  // 4. Poll up to 3000ms for any company signal to appear.
+  // Checks BOTH top-card signals AND the experience section li — recruiter/executive
+  // profiles often have no company link in the top card (keyword-heavy headlines
+  // with no "at Company"), so the experience section is the primary source for them.
+  const deadline = Date.now() + 3000
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 150))
     const ready =
       document.querySelector('button[aria-label^="Current company:" i]') ||
       document.querySelector('#experience li .t-bold span[aria-hidden="true"]') ||
+      document.querySelector('#experience li a[href*="/company/"]') ||
       document.querySelector('a[href*="/company/"][data-field="experience_company_logo"]') ||
       document.querySelector('.pv-top-card--experience-list a[href*="/company/"]') ||
       document.querySelector('[data-view-name="profile-component-entity"] a[href*="/company/"]')
@@ -299,6 +303,19 @@ function scrapeCurrentCompanySync() {
       if (m && m[1]) {
         const co = sanitize(m[1]).split('|')[0].split('·')[0].replace(/[@].*$/, '').trim()
         if (isPlausibleCompany(co)) return { company: co, source: 'topcard-subtitle', confidence: 0.70 }
+      }
+    }
+
+    // 7a. <meta name="description"> — LinkedIn populates this separately from
+    // og:description and often lists the employer even when the headline is
+    // a keyword-branding line with no "at Company" (common for recruiters and
+    // executives). Try both "at Company" and a parenthetical "(Company)" pattern.
+    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content') || ''
+    if (metaDesc) {
+      const metaAt = metaDesc.match(/(?:\s+at\s+|[@]\s*)([^.|·@\n]+?)(?:\.|·|\||$)/i)
+      if (metaAt && metaAt[1]) {
+        const co = sanitize(metaAt[1])
+        if (isPlausibleCompany(co)) return { company: co, source: 'meta-description', confidence: 0.70 }
       }
     }
 
