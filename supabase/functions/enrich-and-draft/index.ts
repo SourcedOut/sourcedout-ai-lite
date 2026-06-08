@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
 // Bump this string every meaningful deploy so we can verify what's live.
-const FUNCTION_VERSION = "2026-06-08-gemini-ensemble-no-pdl-v41"
+const FUNCTION_VERSION = "2026-06-08-mev-hardening-v41.1"
 console.log(`[enrich boot] FUNCTION_VERSION=${FUNCTION_VERSION}`)
 
 const cors = {
@@ -1108,16 +1108,39 @@ async function myEmailVerifierValidate(
 ): Promise<{ status: 'valid' | 'invalid' | 'risky' | 'unknown'; raw: any }> {
   if (!key || !email) return { status: 'unknown', raw: null }
   const url = `https://client.myemailverifier.com/verifier/validate_single/${encodeURIComponent(email)}/${encodeURIComponent(key)}`
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
-  const text = await res.text()
-  let raw: any = text
-  try { raw = JSON.parse(text) } catch {}
-  const statusStr: string = (raw?.Status || raw?.status || '').toString().toLowerCase()
-  let status: 'valid' | 'invalid' | 'risky' | 'unknown' = 'unknown'
-  if (statusStr.includes('valid') && !statusStr.includes('invalid')) status = 'valid'
-  else if (statusStr.includes('invalid')) status = 'invalid'
-  else if (statusStr.includes('risky') || statusStr.includes('unknown') || statusStr.includes('catch')) status = 'risky'
-  return { status, raw }
+  const maxAttempts = 2
+  let lastErr: unknown = null
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+      const text = await res.text()
+      if (!res.ok) {
+        // Non-2xx is almost always transient (rate-limit / 5xx) or an auth problem.
+        // Retry once, then report 'unknown' (inconclusive) — never let it masquerade as
+        // a definitive verdict that could flip a domain to catch-all.
+        console.warn(`[mev] HTTP ${res.status} for ${maskEmail(email)} (attempt ${attempt}/${maxAttempts})`)
+        if (attempt < maxAttempts) { await new Promise(r => setTimeout(r, attempt * 800)); continue }
+        return { status: 'unknown', raw: text }
+      }
+      let raw: any = text
+      try { raw = JSON.parse(text) } catch {}
+      const statusStr: string = (raw?.Status || raw?.status || '').toString().toLowerCase()
+      // Keep these buckets distinct. In particular 'unknown' (transient/inconclusive) must
+      // NOT collapse into 'risky', because 'risky' is treated as catch-all evidence downstream.
+      let status: 'valid' | 'invalid' | 'risky' | 'unknown' = 'unknown'
+      if (statusStr.includes('valid') && !statusStr.includes('invalid')) status = 'valid'
+      else if (statusStr.includes('invalid')) status = 'invalid'
+      else if (statusStr.includes('catch') || statusStr.includes('risky')) status = 'risky'
+      else status = 'unknown'   // 'unknown', empty, or any unrecognized verdict
+      return { status, raw }
+    } catch (e) {
+      lastErr = e
+      console.warn(`[mev] network error for ${maskEmail(email)} (attempt ${attempt}/${maxAttempts}): ${String((e as any)?.message || e)}`)
+      if (attempt < maxAttempts) { await new Promise(r => setTimeout(r, attempt * 800)); continue }
+      throw lastErr
+    }
+  }
+  return { status: 'unknown', raw: null }  // unreachable, satisfies the type checker
 }
 
 // ── Catch-all confirmation probe ────────────────────────────────────────────────
@@ -1606,6 +1629,7 @@ async function runMevLoop(
   myEmailVerifierKey: string,
   labelFn: (c: string) => string,
   logTag: string,
+  mevCache?: Map<string, 'valid' | 'invalid' | 'risky' | 'unknown'>,
 ): Promise<{ email: string | null; riskyFallback: string | null; personalFallback: string | null; tried: string[]; statuses: string[]; lastError: string | null }> {
   const tried: string[] = []
   const statuses: string[] = []
@@ -1615,9 +1639,20 @@ async function runMevLoop(
   for (const c of candidates.slice(0, limit)) {
     tried.push(maskEmail(c))
     try {
-      const v = await myEmailVerifierValidate(c, myEmailVerifierKey)
+      // Reuse a definitive verdict for this exact address if an earlier step already paid
+      // for it. Only 'valid'/'invalid' are cached (they're stable); 'risky'/'unknown' may be
+      // transient, so those are always re-checked.
+      const cached = mevCache?.get(c)
+      let v: { status: 'valid' | 'invalid' | 'risky' | 'unknown' }
+      if (cached === 'valid' || cached === 'invalid') {
+        v = { status: cached }
+        console.log(`[${logTag}] ${maskEmail(c)} → ${cached} (cached)`)
+      } else {
+        v = await myEmailVerifierValidate(c, myEmailVerifierKey)
+        if (mevCache && (v.status === 'valid' || v.status === 'invalid')) mevCache.set(c, v.status)
+        console.log(`[${logTag}] ${maskEmail(c)} → ${v.status}`)
+      }
       statuses.push(v.status)
-      console.log(`[${logTag}] ${maskEmail(c)} → ${v.status}`)
       if (v.status === 'valid') {
         // Personal domain (gmail, yahoo, etc.) — keep as fallback, keep searching for work email
         if (isPersonalEmailDomain(c)) {
@@ -1669,6 +1704,9 @@ async function runEmailWaterfall(opts: {
   // so the waterfall keeps searching for a corporate address.
   let personalEmailFallback: string | null = null
   const foundPhones = new Set<string>()
+  // Per-request memo of definitive MEV verdicts (valid/invalid) so the same address is
+  // never billed to MyEmailVerifier twice across the waterfall's multiple verification rounds.
+  const mevCache = new Map<string, 'valid' | 'invalid' | 'risky' | 'unknown'>()
   const finish = (result: WaterfallResult): WaterfallResult => {
     summary.final_source = result.source
     summary.final_email = maskEmail(result.email)
@@ -1829,16 +1867,22 @@ async function runEmailWaterfall(opts: {
         if (!myEmailVerifierKey) return { status: 'SKIP', reason: 'no_mev_key' }
         if (patternEmails.length === 0) return { status: 'SKIP', reason: 'no_pattern_emails' }
         try {
-          const r = await runMevLoop(patternEmails, patternEmails.length, myEmailVerifierKey, maskEmail, 'myemailverifier_haiku')
+          const r = await runMevLoop(patternEmails, patternEmails.length, myEmailVerifierKey, maskEmail, 'myemailverifier_haiku', mevCache)
           if (r.email) {
             cachedVerified = r.email
             return { status: 'OK', meta: { tried: r.tried, statuses: r.statuses, accepted: maskEmail(r.email), via: allPatternsSeeded ? 'seeded_pattern_mev_confirmed' : 'pattern_cache_multi' } }
           }
           if (r.riskyFallback && r.statuses.length > 0 && r.statuses.every(s => s === 'risky' || s === 'error')) {
             if (!allPatternsSeeded) {
-              // Real-verified patterns all returned risky → domain is genuinely catch-all
+              // Real-verified patterns all returned risky → likely catch-all. Corroborate with
+              // the same nonsense-local probe Step 4 uses before flipping a previously-good
+              // domain to catch-all, so a transient SMTP blip can't poison the pattern cache.
+              const reallyCatchAll = await confirmCatchAll(workingDomain, myEmailVerifierKey)
+              if (!reallyCatchAll) {
+                return { status: 'MISS', meta: { tried: r.tried, statuses: r.statuses, note: 'all_risky_probe_negative_transient', probe: 'negative' } }
+              }
               cachedRisky = r.riskyFallback
-              return { status: 'RISKY_FALLBACK', meta: { tried: r.tried, statuses: r.statuses, risky_fallback: maskEmail(r.riskyFallback), via: 'pattern_cache_multi' } }
+              return { status: 'RISKY_FALLBACK', meta: { tried: r.tried, statuses: r.statuses, risky_fallback: maskEmail(r.riskyFallback), via: 'pattern_cache_multi', probe: 'positive' } }
             }
             // Seeded patterns all returned risky → could be wrong pattern, not necessarily catch-all.
             // Fall through to full waterfall (Google / Brave / PDL) to find the real email.
@@ -1883,7 +1927,7 @@ async function runEmailWaterfall(opts: {
   await step<{ tried: string[]; statuses: string[]; accepted: string | null; risky_fallback: string | null }>('myemailverifier_haiku', async () => {
     if (!myEmailVerifierKey) return { status: 'SKIP', reason: 'no_mev_key' }
     if (haikuCandidates.length === 0) return { status: 'SKIP', reason: 'no_candidates' }
-    const r = await runMevLoop(haikuCandidates, 5, myEmailVerifierKey, maskEmail, 'myemailverifier_haiku')
+    const r = await runMevLoop(haikuCandidates, 5, myEmailVerifierKey, maskEmail, 'myemailverifier_haiku', mevCache)
     if (r.personalFallback && !personalEmailFallback) personalEmailFallback = r.personalFallback
     if (r.email) {
       verifiedHaiku = r.email
@@ -2073,7 +2117,7 @@ Return ONLY JSON:
     // Round 1: Haiku-refined + direct Google/Brave hits (no PDL yet)
     const round1 = mergeCandidateSets(refinedCandidates, googleCandidates, braveCandidates)
     if (round1.length === 0) return { status: 'SKIP', reason: 'no_candidates' }
-    const r = await runMevLoop(round1, 6, myEmailVerifierKey, maskEmail, 'myemailverifier_search_round1')
+    const r = await runMevLoop(round1, 6, myEmailVerifierKey, maskEmail, 'myemailverifier_search_round1', mevCache)
     if (r.personalFallback && !personalEmailFallback) personalEmailFallback = r.personalFallback
     if (r.email) {
       verifiedPrePdl = r.email
@@ -2194,6 +2238,7 @@ Return ONLY JSON:
       myEmailVerifierKey,
       maskEmail,
       'myemailverifier_ensemble',
+      mevCache,
     )
 
     if (lastError && !email) {
@@ -2253,7 +2298,7 @@ Return ONLY JSON:
     const newPdlWork = pdlCandidates.filter(c => !round1Already.has(c))
     const allRemaining = mergeCandidateSets(newPdlWork, pdlCandidates)
     if (allRemaining.length === 0) return { status: 'SKIP', reason: 'no_candidates' }
-    const r = await runMevLoop(allRemaining, 8, myEmailVerifierKey, maskEmail, 'myemailverifier_search_candidates')
+    const r = await runMevLoop(allRemaining, 8, myEmailVerifierKey, maskEmail, 'myemailverifier_search_candidates', mevCache)
     if (r.personalFallback && !personalEmailFallback) personalEmailFallback = r.personalFallback
     if (r.email) {
       verifiedSearch = r.email
