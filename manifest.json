@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SourcedOut",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "AI-powered outreach for recruiters and talent sourcers.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtjf9vUh7Kab87nzvZ6O6h0Fmuwop0MWvdRCUkrMQwv+ZnNR6s1TL+daBT+Nd84TEGWfYGw0YzqduHM9mrlOsm94cFfxYoH2SngeiecLOp8F7tljX50oBffjKF0qAFQdGa8ZMzhhhJpjnZhchGirV90K2N5EP5O18xfSwjVak9xjUDqzVOdWyb8OH8iPuWEC7l5/QnGCOI7EqnKp2Z33aYEJEV3vR9n1DcYv3vtrsB23Pl2EEHBSMaU7qTGJciyVrwexPK+byIXmozAafrxb65ofzVVaAefEvuf8MxCSaIJ26LWf7lSdz0rzZzHgiYdIBw0uKjZ4QdVk220X9lG51kQIDAQAB",
   "permissions": [

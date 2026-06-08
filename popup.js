@@ -586,7 +586,11 @@ function setupCustomizeToggle() {
 }
 
 // ── Page prefill strategy ─────────────────────────────────────────────────────
-function sendMessageWithTimeout(tabId, msg, ms = 3000) {
+// ms must exceed the content script's worst-case scrape time. scrapeCurrentCompanyRobust
+// can poll up to ~3.6s (3s experience-section poll + 0.6s top-card re-render poll) on
+// slow profiles, so the old 3000ms timeout could fire first and drop the response —
+// leaving _linkedinUrl unset and surfacing "Open a LinkedIn profile page first".
+function sendMessageWithTimeout(tabId, msg, ms = 6000) {
   return Promise.race([
     chrome.tabs.sendMessage(tabId, msg),
     new Promise(resolve => setTimeout(() => resolve(null), ms))
@@ -606,14 +610,16 @@ async function prefillFromPage() {
     let data = null
     try {
       data = await sendMessageWithTimeout(tab.id, { type: 'scrape' })
-    } catch {
-      if (isLinkedInProfile) {
-        await new Promise(r => setTimeout(r, 800))
-        if (_prefillAborted || $('batchDrawer')?.classList.contains('open')) return
-        try {
-          data = await sendMessageWithTimeout(tab.id, { type: 'scrape' })
-        } catch {}
-      }
+    } catch {}
+    // Retry once if the first attempt threw OR timed out (resolved null) — the
+    // content script may still be injecting, or the scrape ran long. Without this
+    // a null result leaves _linkedinUrl unset ("Open a LinkedIn profile page first").
+    if (!data && isLinkedInProfile) {
+      await new Promise(r => setTimeout(r, 800))
+      if (_prefillAborted || $('batchDrawer')?.classList.contains('open')) return
+      try {
+        data = await sendMessageWithTimeout(tab.id, { type: 'scrape' })
+      } catch {}
     }
 
     if (_prefillAborted || $('batchDrawer')?.classList.contains('open')) return

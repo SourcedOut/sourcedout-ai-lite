@@ -1,10 +1,22 @@
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type !== 'scrape') return false
   ;(async () => {
-    const full_name = scrapeFullName()
-    const { company: current_company, source: current_company_source } = await scrapeCurrentCompanyRobust()
+    // The URL is instant and is what gates the whole flow — capture it first so a
+    // slow/throwing company scrape can never strip it from the response.
+    const linkedin_url = window.location.href.split('?')[0]
+    let full_name = null
+    let current_company = null
+    let current_company_source = null
+    try {
+      full_name = scrapeFullName()
+      const res = await scrapeCurrentCompanyRobust()
+      current_company = res.company
+      current_company_source = res.source
+    } catch (e) {
+      console.warn('[SourcedOut scrape] company/name scrape failed (non-fatal):', e)
+    }
     sendResponse({
-      linkedin_url: window.location.href.split('?')[0],
+      linkedin_url,
       full_name,
       current_company,
       current_company_source,
