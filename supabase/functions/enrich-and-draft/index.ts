@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
 // Bump this string every meaningful deploy so we can verify what's live.
-const FUNCTION_VERSION = "2026-06-08-audit-fixes-v41.2"
+const FUNCTION_VERSION = "2026-06-08-auto-proceed-v41.3"
 console.log(`[enrich boot] FUNCTION_VERSION=${FUNCTION_VERSION}`)
 
 const cors = {
@@ -3582,22 +3582,25 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
       }
     })
 
-    if (trustedCandidates.length === 0) {
-      // Surface low-confidence guesses to the popup as suggestion chips.
-      const suggestions = companyCandidates.map(c => ({ name: c.name, source: c.source, confidence: c.confidence }))
-      return json({
-        error: {
-          code: 'NEED_COMPANY',
-          message: companyCandidates.length > 0
-            ? "We couldn't confirm this person's current company. Pick a suggestion or type the correct company above — no credit will be charged."
-            : "We couldn't detect this person's company from LinkedIn or public sources. Type the company name above and try again — no credit will be charged.",
-        },
-        companyCandidates: suggestions,
-        debug: { correlationId, records },
-      }, 422)
+    // Always auto-proceed — never block the recruiter to type a company.
+    // Rationale: the cheap waterfall needs a *trusted* company, but Step 6
+    // (FullEnrich) resolves company + email from the LinkedIn URL alone, so a
+    // missing or low-confidence company is not fatal — it just means the cheap
+    // tier may MISS and FullEnrich becomes the authoritative path. refundCredit()
+    // still fires if the whole waterfall finds nothing, so a dead lookup isn't
+    // charged. (Previously this returned NEED_COMPANY and forced manual typing,
+    // which broke the one-click value prop.)
+    if (trustedCandidates.length > 0) {
+      // Prefer trusted candidates for the cheap path when we have them.
+      companyCandidates = trustedCandidates
+    } else {
+      // No trusted company: keep any low-confidence guesses (they're still
+      // MEV-verified before acceptance, so a wrong guess MISSes rather than
+      // producing a false positive) and let FullEnrich resolve from the URL.
+      console.log('[company_discovery] no trusted company — auto-proceeding to waterfall/FullEnrich', {
+        lowConfidenceCandidates: companyCandidates.map(c => `${c.name}@${c.confidence}`),
+      })
     }
-    // Use only trusted candidates for the waterfall.
-    companyCandidates = trustedCandidates
 
     // Idempotency guard (fail-open): stop two simultaneous in-flight lookups of the
     // same profile from each deducting a credit. Requires the acquire_lookup_lock RPC

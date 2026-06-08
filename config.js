@@ -10,7 +10,7 @@ export const CONFIG = {
   // Bump this every meaningful extension/scraper update so the popup
   // diagnostics panel can tell you exactly which local files are loaded.
   // Compare to the server's FUNCTION_VERSION (shown side-by-side).
-  scraperBuild: '2026-06-08-audit-fixes-v41.2',
+  scraperBuild: '2026-06-08-auto-proceed-v41.3',
   pricingUrl: 'https://szxjcitbjcpkhxtjztay.supabase.co/functions/v1/create-checkout',
 
   stripe: {

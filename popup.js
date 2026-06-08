@@ -650,12 +650,11 @@ async function prefillFromPage() {
       // and every step before FullEnrich skips.
       if (data.current_company && $('companyHintInput') && !$('companyHintInput').value.trim()) {
         $('companyHintInput').value = data.current_company
-      } else if (!data.current_company && $('companyHintInput') && !$('companyHintInput').value.trim()) {
-        // Couldn't auto-detect — nudge the user. Same UX pattern as the name field above.
-        setStatus("Couldn't auto-detect company — type it in Customize draft for best results.", 'warning')
-        const fields = $('customizeFields'); const toggle = $('customizeToggle')
-        if (fields && toggle) { fields.style.display = 'block'; toggle.textContent = '▾ Customize draft' }
       }
+      // If the company wasn't auto-detected, do NOT nag the recruiter to type it.
+      // The backend now auto-proceeds: it discovers the company from the LinkedIn
+      // URL (Google + FullEnrich), so a one-click lookup still works. Typing a
+      // company in Customize draft remains optional for power users.
       // Stash the source so generateDraftFlow can forward it to the server logs.
       _companyHintSource = data.current_company_source || null
       try {
