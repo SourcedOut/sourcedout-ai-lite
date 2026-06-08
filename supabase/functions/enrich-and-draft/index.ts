@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
 // Bump this string every meaningful deploy so we can verify what's live.
-const FUNCTION_VERSION = "2026-06-08-mev-hardening-v41.1"
+const FUNCTION_VERSION = "2026-06-08-audit-fixes-v41.2"
 console.log(`[enrich boot] FUNCTION_VERSION=${FUNCTION_VERSION}`)
 
 const cors = {
@@ -1895,11 +1895,13 @@ async function runEmailWaterfall(opts: {
       })
       if (cachedVerified) {
         await upsertEmailPattern(db, workingDomain, cachedVerified, fullName, false)
+        await upsertCompanyDomainHint(db, companyName, workingDomain)
         return finish({ email: cachedVerified, emailStatus: 'found', source: 'haiku_pattern_cache', title: null, domain: workingDomain })
       }
       if (cachedRisky) {
         console.log(`[waterfall] pattern_cache all-risky (real-verified) — marking catch-all: ${maskEmail(cachedRisky)}`)
         await upsertEmailPattern(db, workingDomain, cachedRisky, fullName, true)
+        await upsertCompanyDomainHint(db, companyName, workingDomain)
         return finish({ email: cachedRisky, emailStatus: 'uncertain', source: 'haiku_pattern_cache', title: null, domain: workingDomain })
       }
       // All pattern candidates failed MEV (invalid or seeded-risky) — fall through to full waterfall
@@ -2302,8 +2304,8 @@ Return ONLY JSON:
     if (r.personalFallback && !personalEmailFallback) personalEmailFallback = r.personalFallback
     if (r.email) {
       verifiedSearch = r.email
-      verifiedSource = googleSet.has(r.email) ? 'google_search' : braveSet.has(r.email) ? 'brave_search' : 'pdl_person_enrichment'
-      verifiedTitle  = 'pdl_person_enrichment' === verifiedSource ? pdlTitle : null
+      verifiedSource = googleSet.has(r.email) ? 'google_search' : braveSet.has(r.email) ? 'brave_search' : 'haiku_refine'
+      verifiedTitle  = null  // PDL removed; no title source in this path
       return { status: 'OK', meta: { totalCandidates: allRemaining.length, tried: r.tried, statuses: r.statuses, accepted: maskEmail(r.email), personal_stored: r.personalFallback ? maskEmail(r.personalFallback) : undefined } }
     }
     if (r.lastError && r.tried.length === 1) return { status: 'FAIL', reason: r.lastError }
@@ -2789,6 +2791,9 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
 
       if (campaignErr || !campaign) {
         console.error('import-campaign insert failed:', campaignErr)
+        if (campaignErr?.code === '23505') {
+          return json({ error: { code: 'DUPLICATE_CAMPAIGN', message: 'A campaign with this name already exists. Rename it and try again.' } }, 409)
+        }
         return json({ error: { code: 'DB_ERROR', message: 'Could not create campaign.' } }, 500)
       }
 
@@ -3989,7 +3994,13 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
 
 // ── Helper: increment a campaign aggregate count ──────────────────────────────
 async function _incrementCampaignCount(db: any, campaignId: string, field: string) {
+  // Use an RPC for an atomic increment so concurrent enrichments don't race.
+  // Falls back to a read-modify-write if the RPC is not deployed yet (fail-open).
   try {
+    const { error } = await db.rpc('increment_campaign_count', { p_campaign_id: campaignId, p_field: field })
+    if (!error) return
+    // RPC not available or failed — fall back to non-atomic increment with a warning.
+    console.warn(`[_incrementCampaignCount] RPC failed (${error.message}), falling back to read-modify-write`)
     const { data: camp } = await db.from('campaigns').select(field).eq('id', campaignId).maybeSingle()
     if (camp) {
       await db.from('campaigns').update({
