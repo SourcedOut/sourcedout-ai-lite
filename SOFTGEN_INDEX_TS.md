@@ -1,3 +1,14 @@
+# SOFTGEN_INDEX_TS
+
+> **Instructions for Softgen:** Replace the **entire contents** of
+> `supabase/functions/enrich-and-draft/index.ts` with the code block below.
+> Use full replacement — do not merge or patch.
+>
+> Note: the outer fence uses 4 backticks because line 51 of the file contains
+> triple-backticks inside a regex. The 4-backtick fence ensures the block is
+> parsed correctly.
+
+````typescript
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
@@ -4010,3 +4021,5 @@ async function _incrementCampaignCount(db: any, campaignId: string, field: strin
     }
   } catch (e) { console.error(`_incrementCampaignCount(${field}) failed:`, e) }
 }
+
+````

@@ -1,3 +1,394 @@
+# SourcedOut AI — Complete Code Update for Softgen
+
+This file is **fully self-contained**. Everything Softgen needs is below — no need to
+pull any branch. There are two parts:
+
+1. **Three new Supabase SQL migration files** — pasted in full, with step-by-step
+   instructions for running them in Supabase.
+2. **The COMPLETE edge function** (`supabase/functions/enrich-and-draft/index.ts`) — the
+   entire final file is pasted in Part 4. Replace the existing file with it wholesale
+   (no patching, no merging) to eliminate any chance of error.
+
+After applying everything: redeploy the `enrich-and-draft` edge function. The deployed
+version string should read `2026-06-08-audit-fixes-v41.2`.
+
+---
+
+## Part 0 — Deploy order (do this top to bottom)
+
+1. Run **SQL migration 1** (lookup locks) — Part 1
+2. Run **SQL migration 2** (debug-log retention) — Part 2 (verify the timestamp column first)
+3. Run **SQL migration 3** (campaigns) — Part 3
+4. Confirm the **`GEMINI_API_KEY`** secret is set on the edge function (enables the 4th AI model)
+5. Replace the **entire `index.ts`** with Part 4
+6. Redeploy: `supabase functions deploy enrich-and-draft`
+
+### Edge function secrets the code expects
+
+| Secret | Status |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | existing |
+| `OPENAI_API_KEY` | existing |
+| `DEEPSEEK_API_KEY` | existing |
+| `GEMINI_API_KEY` | **new — required for Gemini ensemble model** |
+| `MYEMAILVERIFIER_API_KEY` | existing |
+| `GOOGLE_API_KEY` / `GOOGLE_CX` | existing |
+| `BRAVE_API_KEY` | existing |
+| `FULLENRICH_API_KEY` | existing |
+| `PDL_API_KEY` | no longer used (safe to leave or remove) |
+
+### How to run the SQL migrations in Supabase
+
+For EACH of the three SQL blocks in Parts 1–3:
+
+**Option A — Supabase Dashboard (simplest):**
+1. Open your project at https://supabase.com/dashboard
+2. Left sidebar → **SQL Editor** → **New query**
+3. Copy the entire SQL block for that part and paste it into the editor
+4. Click **Run** (or press Cmd/Ctrl + Enter)
+5. Confirm it reports success with no errors, then move to the next part
+
+**Option B — Supabase CLI (if you keep migrations in the repo):**
+1. Create the file at the exact path shown in each part heading
+2. Paste the SQL into it
+3. Run `supabase db push` from the project root
+
+Run them **in order (1 → 2 → 3)**. Migration 3 must be applied **before** the function is
+redeployed, because the new function code calls the `increment_campaign_count` RPC and the
+campaign tables it creates. Migration 1 must also precede the redeploy (the function calls
+`acquire_lookup_lock`); the call is fail-open, but deploying the SQL first is cleanest.
+
+---
+
+## Part 1 — SQL Migration: `supabase/migrations/20260607000001_lookup_locks.sql`
+
+Prevents two simultaneous lookups of the same profile from each deducting a credit.
+Creates the `lookup_locks` table and the `acquire_lookup_lock` / `release_lookup_lock` RPCs.
+Paste the whole block into the SQL editor and Run.
+
+```sql
+-- ============================================================================
+-- P1 #4 — Idempotency guard for profile lookups (prevents concurrent double-charge)
+-- ============================================================================
+--
+-- The enrich-and-draft function deducts a lookup credit up-front. Repeat lookups
+-- AFTER a run completes are already free (served from the saved_profiles cache),
+-- but two *simultaneous* in-flight requests for the same (user, linkedin_url) can
+-- each pass the cache check and each deduct a credit. This migration adds a short
+-- TTL lock so only the first concurrent request proceeds; the others get a 409
+-- (LOOKUP_IN_PROGRESS) and can retry — by which time the first has populated the
+-- cache, so the retry is free.
+--
+-- The edge function calls acquire_lookup_lock() defensively (fail-open): until this
+-- migration is deployed, the RPC simply doesn't exist, the call errors, and the
+-- function behaves exactly as it did before. Deploying this file is all that's
+-- needed to switch the protection on.
+--
+-- Deploy with:  supabase db push        (or paste into the Supabase SQL editor)
+-- ============================================================================
+
+create table if not exists public.lookup_locks (
+  user_id      uuid        not null,
+  linkedin_url text        not null,
+  created_at   timestamptz not null default now(),
+  primary key (user_id, linkedin_url)
+);
+
+alter table public.lookup_locks enable row level security;
+-- No policies are granted: only the service role (used by the edge function) can
+-- touch this table. RLS-on with no policy denies all anon/authenticated access.
+
+-- Atomically acquire a lock. Stale locks (older than the TTL — e.g. from a crashed
+-- request) are cleared first so a profile can never be permanently blocked.
+-- Returns true if the caller acquired the lock, false if another request holds it.
+create or replace function public.acquire_lookup_lock(
+  p_user_id      uuid,
+  p_linkedin_url text,
+  p_ttl_seconds  int default 90
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.lookup_locks
+   where user_id = p_user_id
+     and linkedin_url = p_linkedin_url
+     and created_at < now() - make_interval(secs => p_ttl_seconds);
+
+  insert into public.lookup_locks (user_id, linkedin_url)
+  values (p_user_id, p_linkedin_url);
+
+  return true;
+exception
+  when unique_violation then
+    return false;  -- a fresh lock already exists → another request is in flight
+end;
+$$;
+
+-- Optional explicit release. The edge function does NOT call this (it relies on the
+-- TTL above, because the cache short-circuits repeat lookups), but it is provided so
+-- you can release manually or wire it into a finally block later if you prefer.
+create or replace function public.release_lookup_lock(
+  p_user_id      uuid,
+  p_linkedin_url text
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.lookup_locks
+   where user_id = p_user_id and linkedin_url = p_linkedin_url;
+end;
+$$;
+```
+
+---
+
+## Part 2 — SQL Migration: `supabase/migrations/20260607000002_enrichment_debug_logs_retention.sql`
+
+**Before running:** confirm the timestamp column on `enrichment_debug_logs` is named
+`created_at`. Run this in the SQL editor first:
+
+```sql
+select column_name from information_schema.columns
+ where table_name = 'enrichment_debug_logs';
+```
+
+If the column is `inserted_at` instead of `created_at`, replace every `created_at` in the
+block below before running it. Then paste the whole block into the SQL editor and Run.
+(Optional: uncomment the pg_cron block at the bottom to auto-purge daily.)
+
+```sql
+-- ============================================================================
+-- P1 #5 — Retention policy for enrichment_debug_logs (bounds PII at rest)
+-- ============================================================================
+--
+-- enrichment_debug_logs stores per-step diagnostics, including raw provider
+-- payloads that can contain candidate PII (names, emails, phone numbers). These
+-- logs are intentional and useful for debugging the waterfall, so we do NOT scrub
+-- their contents — instead we bound how long they live.
+--
+-- This migration adds a purge function and (optionally) schedules it daily via
+-- pg_cron. Creating the function deletes nothing on its own; rows are only removed
+-- when the function runs.
+--
+-- NOTE: adjust the timestamp column name below if your table does not use
+-- `created_at` (some schemas use `inserted_at`). Verify with:
+--     select column_name from information_schema.columns
+--      where table_name = 'enrichment_debug_logs';
+--
+-- Deploy with:  supabase db push        (or paste into the Supabase SQL editor)
+-- ============================================================================
+
+-- Speed up the time-range delete.
+create index if not exists enrichment_debug_logs_created_at_idx
+  on public.enrichment_debug_logs (created_at);
+
+-- Delete debug rows older than the retention window (default 30 days).
+-- Returns the number of rows removed.
+create or replace function public.purge_old_enrichment_debug_logs(
+  p_retention_days int default 30
+) returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_deleted integer;
+begin
+  delete from public.enrichment_debug_logs
+   where created_at < now() - make_interval(days => p_retention_days);
+  get diagnostics v_deleted = row_count;
+  return v_deleted;
+end;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- Optional: schedule a daily purge at 03:15 UTC via pg_cron.
+-- Requires the pg_cron extension. Uncomment to enable, or run the function
+-- manually / from your own scheduler instead.
+-- ----------------------------------------------------------------------------
+-- create extension if not exists pg_cron;
+-- select cron.schedule(
+--   'purge-enrichment-debug-logs',
+--   '15 3 * * *',
+--   $$ select public.purge_old_enrichment_debug_logs(30); $$
+-- );
+```
+
+---
+
+## Part 3 — SQL Migration: `supabase/migrations/20260608000003_campaigns.sql`
+
+**Important:** the Campaign feature in the extension depends on the `campaigns` and
+`campaign_candidates` tables, which were never created by any migration. This is why
+Campaigns do not work. This migration creates both tables (with row-level security) and
+the atomic `increment_campaign_count` RPC. Paste the whole block into the SQL editor and Run.
+
+If these tables already exist from earlier manual setup, the `create table if not exists`
+guards make re-running safe; the indexes, RLS policies, and RPC will still be created.
+
+```sql
+-- ============================================================================
+-- Campaigns feature — tables, indexes, RLS policies, and atomic counter RPC
+-- ============================================================================
+--
+-- Establishes the two tables the campaign workflow depends on:
+--   campaigns            — one row per named outreach campaign
+--   campaign_candidates  — one row per candidate in a campaign
+--
+-- Also adds increment_campaign_count(uuid, text) so counter increments from
+-- the edge function are atomic (avoids read-modify-write races on concurrent
+-- enrichments/drafts for the same campaign).
+--
+-- Deploy with:  supabase db push   (or paste into the Supabase SQL editor)
+-- ============================================================================
+
+-- ── campaigns ────────────────────────────────────────────────────────────────
+
+create table if not exists public.campaigns (
+  id             uuid        primary key default gen_random_uuid(),
+  user_id        uuid        not null references auth.users(id) on delete cascade,
+  name           text        not null,
+  job_id         uuid        references public.saved_jobs(id) on delete set null,
+  status         text        not null default 'needs_job',  -- needs_job | ready | active | archived
+  total_count    int         not null default 0,
+  enriched_count int         not null default 0,
+  drafted_count  int         not null default 0,
+  approved_count int         not null default 0,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  unique (user_id, name)
+);
+
+create index if not exists idx_campaigns_user_id on public.campaigns (user_id);
+
+alter table public.campaigns enable row level security;
+
+create policy campaigns_select on public.campaigns
+  for select using (auth.uid() = user_id);
+
+create policy campaigns_insert on public.campaigns
+  for insert with check (auth.uid() = user_id);
+
+create policy campaigns_update on public.campaigns
+  for update using (auth.uid() = user_id);
+
+create policy campaigns_delete on public.campaigns
+  for delete using (auth.uid() = user_id);
+
+-- ── campaign_candidates ───────────────────────────────────────────────────────
+
+create table if not exists public.campaign_candidates (
+  id                uuid        primary key default gen_random_uuid(),
+  campaign_id       uuid        not null references public.campaigns(id) on delete cascade,
+  user_id           uuid        not null references auth.users(id) on delete cascade,
+
+  -- Identity (from CSV)
+  first_name        text,
+  last_name         text,
+  headline          text,
+  location          text,
+  current_title     text,
+  current_company   text,
+  linkedin_url      text,
+  csv_email         text,   -- email the recruiter supplied in the CSV (may be personal or empty)
+  phone             text,
+  notes             text,
+  feedback          text,
+  active_project    text,
+
+  -- Linked Supabase profile (set after enrichment matches a saved_profiles row)
+  saved_profile_id  uuid        references public.saved_profiles(id) on delete set null,
+
+  -- Workflow status
+  -- imported → enriching → enriched | no_email | failed
+  -- enriched → drafting  → drafted
+  -- drafted  → approved
+  -- approved → followed_up → responded
+  status            text        not null default 'imported',
+
+  -- Enrichment results
+  work_email        text,
+  personal_email    text,
+  email_status      text,   -- found | uncertain | not_found
+  enriched_title    text,
+  enriched_company  text,
+
+  -- Draft
+  draft_subject     text,
+  draft_body        text,
+  draft_confidence  numeric,
+
+  -- Timestamps
+  enriched_at       timestamptz,
+  drafted_at        timestamptz,
+  approved_at       timestamptz,
+  followed_up_at    timestamptz,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
+create index if not exists idx_campaign_candidates_campaign_id
+  on public.campaign_candidates (campaign_id);
+
+create index if not exists idx_campaign_candidates_user_status
+  on public.campaign_candidates (user_id, status);
+
+alter table public.campaign_candidates enable row level security;
+
+create policy campaign_candidates_select on public.campaign_candidates
+  for select using (auth.uid() = user_id);
+
+create policy campaign_candidates_insert on public.campaign_candidates
+  for insert with check (auth.uid() = user_id);
+
+create policy campaign_candidates_update on public.campaign_candidates
+  for update using (auth.uid() = user_id);
+
+create policy campaign_candidates_delete on public.campaign_candidates
+  for delete using (auth.uid() = user_id);
+
+-- ── Atomic counter increment ──────────────────────────────────────────────────
+-- Called by the edge function so concurrent enrichments / drafts never race on
+-- the same campaign counter. Uses UPDATE ... SET field = field + 1.
+-- Only the fields used by the edge function are allowed.
+
+create or replace function public.increment_campaign_count(
+  p_campaign_id uuid,
+  p_field       text
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_field not in ('enriched_count', 'drafted_count', 'approved_count', 'total_count') then
+    raise exception 'increment_campaign_count: unknown field %', p_field;
+  end if;
+  execute format(
+    'update public.campaigns set %I = %I + 1, updated_at = now() where id = $1',
+    p_field, p_field
+  ) using p_campaign_id;
+end;
+$$;
+```
+
+---
+
+## Part 4 — COMPLETE edge function: `supabase/functions/enrich-and-draft/index.ts`
+
+This is the **entire final file**. Delete the current contents of
+`supabase/functions/enrich-and-draft/index.ts` and replace it with everything inside the
+code block below. Do not merge or patch — replace the whole file, then redeploy.
+
+NOTE: this block is fenced with FOUR backticks because the code itself contains a
+three-backtick sequence (in a regex). When copying, take everything between the four-backtick
+lines.
+
+````typescript
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
@@ -4010,3 +4401,4 @@ async function _incrementCampaignCount(db: any, campaignId: string, field: strin
     }
   } catch (e) { console.error(`_incrementCampaignCount(${field}) failed:`, e) }
 }
+````
