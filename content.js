@@ -363,13 +363,23 @@ function scrapeBroadCompanyLink() {
       // Skip navigation/footer links
       if (href.includes('/company/add') || href.includes('/company/create')) continue
       
-      // v40.3.1: Smart filtering - Check if in trusted section (higher priority)
-      // but don't completely reject links outside trusted sections
+      // v41.3: HARD filter — a link must live inside a trusted profile region.
+      // Previously this was only a score bonus, so a /company/ link from the
+      // right-rail ("More profiles", "Explore Premium profiles", "People also
+      // viewed") or an ad could still win when no trusted link was found, picking
+      // a company the person doesn't work at (e.g. "Ted Conferences"). A WRONG
+      // company poisons the whole waterfall (wrong domain → false/low-confidence
+      // emails, wasted API spend), so it is strictly worse than returning none.
+      // Reject any link outside a trusted section outright.
       let isInTrustedSection = trustedSelectors.some(selector => {
-        const container = document.querySelector(selector)
-        return container && container.contains(link)
+        const containers = document.querySelectorAll(selector)
+        return Array.from(containers).some(c => c.contains(link))
       })
-      
+      if (!isInTrustedSection) {
+        console.log('[scrapeBroadCompanyLink] Skipping link outside trusted section:', link.textContent?.slice(0, 30))
+        continue
+      }
+
       // Skip links inside activity/feed sections — these refer to companies in posts
       if (isInActivitySection(link)) {
         console.log('[scrapeBroadCompanyLink] Skipping link in activity section:', link.textContent?.slice(0, 30))
