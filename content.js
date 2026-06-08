@@ -117,7 +117,21 @@ async function scrapeCurrentCompanyRobust() {
 
   // 5. Scroll back to top so top-card company links are in DOM.
   try { window.scrollTo({ top: 0, behavior: 'instant' }) } catch {}
-  await new Promise(r => setTimeout(r, 100))
+  // Poll up to 600ms for the top-card to re-render rather than sleeping a flat
+  // 100ms — on slow connections the old fixed wait fired before the top-card DOM
+  // had repopulated, so the re-check missed the company and fell through to the
+  // (less reliable) experience-section selectors.
+  {
+    const topDeadline = Date.now() + 600
+    while (Date.now() < topDeadline) {
+      await new Promise(r => setTimeout(r, 100))
+      if (document.querySelector('button[aria-label^="Current company:" i]') ||
+          document.querySelector('a[href*="/company/"][data-field="experience_company_logo"]') ||
+          document.querySelector('.pv-top-card--experience-list a[href*="/company/"]')) {
+        break
+      }
+    }
+  }
 
   // 6. Re-run sync scraper after waiting.
   const after = scrapeCurrentCompanySync()
@@ -157,15 +171,11 @@ function scrapeFromJsonLd() {
           const name = sanitize(member.worksFor.name)
           if (isPlausibleCompany(name)) return name
         }
-        // alumniOf or affiliation as fallback
-        const aff = item?.alumniOf || item?.affiliation
-        if (aff) {
-          const arr = Array.isArray(aff) ? aff : [aff]
-          for (const a of arr) {
-            const name = sanitize(a?.name)
-            if (isPlausibleCompany(name)) return name
-          }
-        }
+        // alumniOf / affiliation intentionally NOT used as a company fallback:
+        // alumniOf is the person's *university*, not their employer. Returning it
+        // here sent the waterfall hunting at a school domain (wasting the cheap
+        // steps and falling through to the paid FullEnrich call). Current employer
+        // must come from worksFor only.
       }
     }
   } catch {}
@@ -218,7 +228,10 @@ function scrapeCurrentCompanySync() {
       const els = document.querySelectorAll(sel)
       let el = null
       for (const candidate of els) {
-        if (!isInActivitySection(candidate)) { el = candidate; break }
+        // Skip activity/feed cards AND the Education section — these broad
+        // selectors also match education entities, which would return the
+        // person's university as their employer.
+        if (!isInActivitySection(candidate) && !isInEducationSection(candidate)) { el = candidate; break }
       }
       if (!el) continue
       const aria = sanitize(el.getAttribute('aria-label') || '')
@@ -331,6 +344,14 @@ function isInActivitySection(el) {
     '[data-view-name*="post"]',
   ]
   return activitySelectors.some(sel => el.closest(sel))
+}
+
+// Returns true if `el` is nested inside the profile's Education section.
+// Used so broad entity selectors don't return a university as the employer.
+function isInEducationSection(el) {
+  const eduSection = document.querySelector('#education')?.closest('section') ||
+                     document.querySelector('section[data-view-name*="education" i]')
+  return !!(eduSection && eduSection.contains(el))
 }
 
 // Last-resort: scan all /company/ links on the page, score by position proximity
@@ -449,7 +470,11 @@ function cleanCompanyText(s) {
 
 function isPlausibleCompany(s) {
   if (!s || s.length < 2 || s.length > 200) return false
-  if (/^(linkedin|self[\s-]?employed|freelance|unemployed|n\/?a|none)$/i.test(s)) return false
+  // Exact-match blocklist (whole string).
+  if (/^(linkedin|self[\s-]?employed|freelance|freelancer|unemployed|independent|independent contractor|n\/?a|none)$/i.test(s)) return false
+  // Word-boundary blocklist — catches slug-derived variants that the exact match
+  // misses, e.g. companyFromHref('/company/self-employed-1234/') → "Self Employed 1234".
+  if (/\b(self[\s-]?employed|freelancer?|unemployed)\b/i.test(s)) return false
   if (!/\p{L}/u.test(s)) return false
   return true
 }
