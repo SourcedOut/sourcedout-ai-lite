@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
 // Bump this string every meaningful deploy so we can verify what's live.
-const FUNCTION_VERSION = "2026-05-06-catchall-fullenrich-v40.6"
+const FUNCTION_VERSION = "2026-06-08-gemini-ensemble-no-pdl-v41"
 console.log(`[enrich boot] FUNCTION_VERSION=${FUNCTION_VERSION}`)
 
 const cors = {
@@ -87,6 +87,35 @@ async function callDeepSeekJson(
 ): Promise<any | null> {
   if (!key) return null
   const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+    }),
+  })
+  if (!res.ok) return null
+  const data = await res.json().catch(() => null)
+  const txt = data?.choices?.[0]?.message?.content?.trim() || ''
+  return txt ? parseJson(txt) : null
+}
+
+// Gemini via its OpenAI-compatible endpoint — same wire format as OpenAI/DeepSeek,
+// so it slots straight into the ensemble. Uses GEMINI_API_KEY (set in Supabase).
+async function callGeminiJson(
+  key: string,
+  model: string,
+  prompt: string,
+  maxTokens: number,
+): Promise<any | null> {
+  if (!key) return null
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1164,6 +1193,29 @@ function buildSearchQueries(fullName: string, company: string | null, domain: st
   return Array.from(queries).filter(Boolean).slice(0, 4)
 }
 
+// Email-format patterns that aggregator pages (Hunter, RocketReach, LeadIQ, SignalHire)
+// publish in words, e.g. "Acme uses the first.last format" or "jdoe@acme.com". These are
+// NOT full emails for the target person, so extractContactInfo misses them — but they tell
+// the model exactly how to build the right local-part. Captured into SearchEvidence.partialEmails,
+// which haiku_refine_candidates and the ensemble already consume.
+const FORMAT_PATTERN_TOKENS = [
+  'first.last', 'first_last', 'first-last', 'firstlast',
+  'flast', 'f.last', 'f_last', 'firstl', 'first.l',
+  'last.first', 'last_first', 'lastfirst', 'lastf', 'last.f',
+]
+function extractEmailPatterns(text: string): string[] {
+  const lower = text.toLowerCase()
+  // Only mine snippets that are actually talking about email format, to avoid noise.
+  if (!/format|pattern|email|@/.test(lower)) return []
+  const found = new Set<string>()
+  for (const tok of FORMAT_PATTERN_TOKENS) {
+    const esc = tok.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')
+    // Token must be a standalone word or directly precede "@" (e.g. "flast@acme.com").
+    if (new RegExp(`(^|[^a-z0-9])${esc}(@|[^a-z0-9]|$)`).test(lower)) found.add(tok)
+  }
+  return Array.from(found)
+}
+
 function extractContactInfo(text: string): { emails: string[]; phones: string[] } {
   const emailMatches = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []
   const rawPhones = extractPhones(text)
@@ -1185,6 +1237,7 @@ async function runGoogleSearchEvidence(
   const queries = buildSearchQueries(fullName, company, domain)
   const exactEmails = new Set<string>()
   const phones = new Set<string>()
+  const partials = new Set<string>()
   const snippets: string[] = []
   const urls: string[] = []
   console.log(`[google_search] running ${queries.length} queries for "${fullName}"`)
@@ -1209,6 +1262,7 @@ async function runGoogleSearchEvidence(
         const ex = extractContactInfo(blob)
         ex.emails.forEach((e) => { exactEmails.add(e); qEmails.push(e) })
         ex.phones.forEach((p) => { phones.add(p); qPhones.push(p) })
+        extractEmailPatterns(blob).forEach((p) => partials.add(p))
         snippets.push(blob)
         if (item.link) urls.push(item.link)
       }
@@ -1220,7 +1274,7 @@ async function runGoogleSearchEvidence(
     queries,
     exactEmails: Array.from(exactEmails),
     phones: Array.from(phones),
-    partialEmails: [],
+    partialEmails: Array.from(partials),
     snippets,
     urls,
     domains: domain ? [domain] : [],
@@ -1236,6 +1290,7 @@ async function runBraveSearch(
   const queries = buildSearchQueries(fullName, company, domain)
   const exactEmails = new Set<string>()
   const phones = new Set<string>()
+  const partials = new Set<string>()
   const snippets: string[] = []
   const urls: string[] = []
   for (const q of queries) {
@@ -1252,12 +1307,13 @@ async function runBraveSearch(
         const ex = extractContactInfo(blob)
         ex.emails.forEach((e) => exactEmails.add(e))
         ex.phones.forEach((p) => phones.add(p))
+        extractEmailPatterns(blob).forEach((p) => partials.add(p))
         snippets.push(blob.trim())
         if (item.url) urls.push(item.url)
       }
     } catch (e) { console.warn('[brave_search] query threw:', e) }
   }
-  return { provider: 'brave', queries, exactEmails: Array.from(exactEmails), phones: Array.from(phones), partialEmails: [], snippets, urls, domains: domain ? [domain] : [] }
+  return { provider: 'brave', queries, exactEmails: Array.from(exactEmails), phones: Array.from(phones), partialEmails: Array.from(partials), snippets, urls, domains: domain ? [domain] : [] }
 }
 
 async function runPdlPersonEnrichment(
@@ -1321,7 +1377,7 @@ async function runPdlPersonEnrichment(
 // ── Ensemble interfaces (v40) ─────────────────────────────────────────────────
 interface EnsembleCandidate {
   value: string
-  source: 'anthropic' | 'openai' | 'deepseek'
+  source: 'anthropic' | 'openai' | 'deepseek' | 'gemini'
   confidence: number
   reason?: string
 }
@@ -1340,6 +1396,7 @@ async function runEmailEnsemble(
   anthropicKey: string,
   openaiKey: string,
   deepseekKey: string,
+  geminiKey: string,
 ): Promise<EnsembleResult> {
   const usedModels: string[] = []
   const out: EnsembleCandidate[] = []
@@ -1468,6 +1525,32 @@ Rules:
     })())
   }
 
+  if (geminiKey) {
+    usedModels.push('gemini_2_5_flash')
+    tasks.push((async () => {
+      try {
+        const p = await callGeminiJson(
+          geminiKey,
+          'gemini-2.5-flash',
+          basePrompt,
+          550,
+        )
+        const cs: any[] = Array.isArray(p?.candidates) ? p.candidates : []
+        for (const c of cs) {
+          if (!c?.value) continue
+          out.push({
+            value: String(c.value),
+            source: 'gemini',
+            confidence: typeof c.confidence === 'number' ? c.confidence : 0.4,
+            reason: typeof c.reason === 'string' ? c.reason : undefined,
+          })
+        }
+      } catch (e) {
+        console.error('ensemble gemini error', e)
+      }
+    })())
+  }
+
   if (!tasks.length) return { candidates: [], usedModels: [] }
 
   await Promise.all(tasks)
@@ -1569,11 +1652,12 @@ async function runEmailWaterfall(opts: {
   pdlKey: string
   openaiKey?: string
   deepseekKey?: string
+  geminiKey?: string
   db?: any
   step: ReturnType<typeof makeStepLogger>['step']
 }): Promise<WaterfallResult> {
   const { fullName, companyName, knownDomain, companySize = null, linkedinUrl = null,
-    anthropicKey, googleKey, googleCx, myEmailVerifierKey, braveKey, pdlKey, openaiKey = '', deepseekKey = '', db = null, step } = opts
+    anthropicKey, googleKey, googleCx, myEmailVerifierKey, braveKey, pdlKey, openaiKey = '', deepseekKey = '', geminiKey = '', db = null, step } = opts
 
   const summary: Record<string, any> = {
     event: 'waterfall_summary',
@@ -2018,7 +2102,7 @@ Return ONLY JSON:
   if (!skipToFullEnrich) {
     await step<{ n: number; models: string[] }>('ensemble_refine_candidates', async () => {
     // Only run if at least one LLM key is present
-    if (!anthropicKey && !openaiKey && !deepseekKey) {
+    if (!anthropicKey && !openaiKey && !deepseekKey && !geminiKey) {
       return { status: 'SKIP', reason: 'no_llm_keys' }
     }
     if (!fullName) return { status: 'SKIP', reason: 'no_full_name' }
@@ -2070,6 +2154,7 @@ Return ONLY JSON:
       anthropicKey,
       openaiKey,
       deepseekKey,
+      geminiKey,
     )
 
     if (!ensemble.candidates.length) {
@@ -2144,45 +2229,26 @@ Return ONLY JSON:
     await step('myemailverifier_ensemble', async () => ({ status: 'SKIP', reason: 'catchall_skip_to_fullenrich' }))
   }
 
-  // ── STEP 11: PDL Person Enrichment ───────────────────────────────────────────
+  // ── STEP 11: (removed) PDL Person Enrichment ─────────────────────────────────
+  // PDL has been removed from the waterfall. Email discovery now relies on the
+  // pattern cache, Haiku guess, Google/Brave search, the LLM ensemble (Anthropic +
+  // OpenAI + DeepSeek + Gemini), and FullEnrich as the authoritative last resort.
+  // The step name is preserved as a no-op so the diagnostics panel and step sequence
+  // stay stable; re-enabling is a one-line restore of the runPdlPersonEnrichment call.
   if (!skipToFullEnrich) {
-  let pdlCandidates: string[] = []
-  let pdlTitle: string | null = null
-  await step<{ usedLinkedinUrl: boolean; usedCompany: boolean; workEmailsFound: number; personalEmailsFound: number; phonesFound: number; socials: number }>('pdl_person_enrichment', async () => {
-    if (!pdlKey) return { status: 'SKIP', reason: 'no_pdl_key' }
-    if (!fullName) return { status: 'SKIP', reason: 'no_full_name' }
-    try {
-      const ev = await runPdlPersonEnrichment(
-        fullName, companyName, workingDomain, linkedinUrl, null, pdlKey,
-      )
-      if (ev.title) pdlTitle = ev.title
-      pdlCandidates = mergeCandidateSets(ev.workEmails, ev.personalEmails)
-      ev.mobilePhones.forEach(p => foundPhones.add(p))
-      const meta = {
-        usedLinkedinUrl: !!linkedinUrl,
-        usedCompany: !!companyName,
-        workEmailsFound: ev.workEmails.length,
-        personalEmailsFound: ev.personalEmails.length,
-        phonesFound: ev.mobilePhones.length,
-        socials: ev.socials.length,
-        confidence: ev.confidence,
-      }
-      if (pdlCandidates.length === 0) return { status: 'MISS', reason: 'no_emails', meta }
-      return { status: 'OK', meta }
-    } catch (e: any) {
-      return { status: 'FAIL', reason: String(e?.message || e) }
-    }
-  })
+  const pdlCandidates: string[] = []
+  const pdlTitle: string | null = null
+  await step('pdl_person_enrichment', async () => ({ status: 'SKIP', reason: 'pdl_disabled' }))
 
-  // ── STEP 12: MEV on all remaining candidates including PDL ───────────────────
-  // Priority: PDL work emails (structured) → search candidates → PDL personal
+  // ── STEP 12: MEV on any remaining candidates ─────────────────────────────────
+  // With PDL removed, the search/refine/ensemble candidates are already verified by
+  // earlier rounds, so this normally finds nothing new and SKIPs. Retained as the
+  // safety-net slot (and stable step name) for candidates beyond round 1's limit.
   let verifiedSearch: string | null = null
   let verifiedSource: WaterfallResult['source'] = 'none'
   let verifiedTitle: string | null = null
   await step<{ totalCandidates: number; tried: string[]; statuses: string[]; accepted: string | null }>('myemailverifier_search_candidates', async () => {
     if (!myEmailVerifierKey) return { status: 'SKIP', reason: 'no_mev_key' }
-    // Already tried: refinedCandidates, googleCandidates, braveCandidates in round1
-    // Now add PDL candidates (work first, then personal)
     const round1Already = new Set(mergeCandidateSets(refinedCandidates, googleCandidates, braveCandidates))
     const newPdlWork = pdlCandidates.filter(c => !round1Already.has(c))
     const allRemaining = mergeCandidateSets(newPdlWork, pdlCandidates)
@@ -2252,6 +2318,7 @@ async function runMultiCompanyWaterfall(opts: {
   pdlKey: string
   openaiKey?: string
   deepseekKey?: string
+  geminiKey?: string
   db?: any
   step: ReturnType<typeof makeStepLogger>['step']
 }): Promise<{ result: WaterfallResult; winner: CompanyCandidate | null }> {
@@ -2279,6 +2346,7 @@ async function runMultiCompanyWaterfall(opts: {
       pdlKey: opts.pdlKey,
       openaiKey: opts.openaiKey,
       deepseekKey: opts.deepseekKey,
+      geminiKey: opts.geminiKey,
       db: opts.db ?? null,
       step,
     })
@@ -2435,6 +2503,7 @@ Deno.serve(async (req: Request) => {
   const openaiKey         = Deno.env.get('OPENAI_API_KEY')           || ''
   const mistralKey        = Deno.env.get('MISTRAL_API_KEY')          || '' // reserved for future
   const deepseekKey       = Deno.env.get('DEEPSEEK_API_KEY')         || ''
+  const geminiKey         = Deno.env.get('GEMINI_API_KEY')           || ''
   const db = createClient(supabaseUrl, serviceKey)
 
   console.log('[enrich env]', JSON.stringify({
@@ -2448,6 +2517,7 @@ Deno.serve(async (req: Request) => {
     has_fullenrich_key: !!fullenrichKey,
     has_openai_key: !!openaiKey,
     has_deepseek_key: !!deepseekKey,
+    has_gemini_key: !!geminiKey,
   }))
 
   const authHeader = req.headers.get('Authorization') || ''
@@ -2920,7 +2990,7 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
               companySize: candidateCompanySize,
               linkedinUrl: candidate.linkedin_url || null,
               anthropicKey, googleKey, googleCx, myEmailVerifierKey, braveKey, pdlKey,
-              openaiKey, deepseekKey,
+              openaiKey, deepseekKey, geminiKey,
               db,
               step,
             })
@@ -3029,7 +3099,7 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
                   companySize: candidateCompanySize,
                   linkedinUrl: candidate.linkedin_url || null,
                   anthropicKey, googleKey, googleCx, myEmailVerifierKey, braveKey, pdlKey,
-                  openaiKey, deepseekKey,
+                  openaiKey, deepseekKey, geminiKey,
                   db,
                   step: retryStep,
                 })
@@ -3528,7 +3598,7 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
         companySize: null,
         linkedinUrl: linkedinUrl || null,
         anthropicKey, googleKey, googleCx, myEmailVerifierKey, braveKey, pdlKey,
-        openaiKey, deepseekKey,
+        openaiKey, deepseekKey, geminiKey,
         db,
         step,
       })
@@ -3689,7 +3759,7 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
             companySize: null,
             linkedinUrl: linkedinUrl || null,
             anthropicKey, googleKey, googleCx, myEmailVerifierKey, braveKey, pdlKey,
-            openaiKey, deepseekKey,
+            openaiKey, deepseekKey, geminiKey,
             db,
             step: retryStep,
           })
