@@ -3,6 +3,7 @@ import { CONFIG } from '../config.js'
 import { getAccessToken, refreshSession } from './auth.js'
 
 const DB = `${CONFIG.supabaseUrl}/rest/v1`
+const FN = `${CONFIG.supabaseUrl}/functions/v1/enrich-lite`
 
 // ── Error normalization ───────────────────────────────────────────────────────
 // Converts any raw error (string, JSON, object) into { code, message }
@@ -92,7 +93,7 @@ async function apiRequest(url, options = {}) {
 
 // ── Main API: enrich-and-draft ────────────────────────────────────────────────
 export async function enrichAndDraft({ linkedinUrl, companyHint, companyHintSource, userContext, fullNameHint, tone, outreachType }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ linkedinUrl, companyHint, companyHintSource, userContext, fullNameHint, tone, outreachType }),
   })
@@ -100,7 +101,7 @@ export async function enrichAndDraft({ linkedinUrl, companyHint, companyHintSour
 
 // ── Summarize raw job posting text into recruiter-friendly bullet points ──────
 export async function summarizeJob({ rawText, jobTitle, company }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'summarize-job', rawText, jobTitle, company }),
   })
@@ -108,7 +109,7 @@ export async function summarizeJob({ rawText, jobTitle, company }) {
 
 // ── Bookmark (or un-bookmark) a saved profile ─────────────────────────────────
 export async function bookmarkProfile({ linkedinUrl, save = true }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'bookmark-profile', linkedinUrl, save }),
   })
@@ -116,7 +117,7 @@ export async function bookmarkProfile({ linkedinUrl, save = true }) {
 
 // ── Fetch all bookmarked profiles for the current user ────────────────────────
 export async function getSavedProfiles() {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'get-saved-profiles' }),
   })
@@ -124,21 +125,21 @@ export async function getSavedProfiles() {
 
 // ── Saved jobs CRUD ───────────────────────────────────────────────────────────
 export async function saveJob({ label, jobUrl, roleTitle, company, highlights }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'save-job', label, jobUrl, roleTitle, company, highlights }),
   })
 }
 
 export async function getSavedJobs() {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'get-saved-jobs' }),
   })
 }
 
 export async function deleteJob({ jobId }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'delete-job', jobId }),
   })
@@ -146,7 +147,7 @@ export async function deleteJob({ jobId }) {
 
 // ── Check if a LinkedIn URL is already in the saved-profiles cache ────────────
 export async function checkSavedProfile({ linkedinUrl }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'check-saved-profile', linkedinUrl }),
   })
@@ -174,61 +175,62 @@ export async function extractJob(pageText) {
 
 // ── Pricing / upgrade ─────────────────────────────────────────────────────────
 export function openUpgradePage() {
-  chrome.tabs.create({ url: CONFIG.pricingUrl })
+  // Billing is not wired up in lite — pricingUrl is null and the CTA is a no-op.
+  if (CONFIG.pricingUrl) chrome.tabs.create({ url: CONFIG.pricingUrl })
 }
 
 // ── Campaign automation ───────────────────────────────────────────────────────
 export async function importCampaign({ campaignName, jobId, candidates }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'import-campaign', campaignName, jobId, candidates }),
   })
 }
 
 export async function getCampaigns() {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'get-campaigns' }),
   })
 }
 
 export async function getCampaignCandidates({ campaignId, status }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'get-campaign-candidates', campaignId, status }),
   })
 }
 
 export async function enrichCampaignCandidate({ candidateId }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'enrich-campaign-candidate', candidateId }),
   })
 }
 
 export async function draftCampaignCandidate({ candidateId }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'draft-campaign-candidate', candidateId }),
   })
 }
 
 export async function updateCandidateStatus({ candidateId, status }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'update-candidate-status', candidateId, status }),
   })
 }
 
 export async function linkCampaignJob({ campaignId, jobId }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'link-campaign-job', campaignId, jobId }),
   })
 }
 
 export async function deleteCampaign({ campaignId }) {
-  return apiRequest(`${CONFIG.supabaseUrl}/functions/v1/enrich-and-draft`, {
+  return apiRequest(FN, {
     method: 'POST',
     body: JSON.stringify({ action: 'delete-campaign', campaignId }),
   })

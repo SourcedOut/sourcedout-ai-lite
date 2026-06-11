@@ -13,7 +13,6 @@ let _isBookmarked = false
 let _isGenerating = false  // double-submission guard
 let _prefillAborted = false  // set to true while batch drawer is open
 let _mainAppListenersBound = false
-let _companyHintSource = null  // diagnostic: which scraper path produced companyHint
 let _selectedTone = null           // null = recruiter-profile default; 'formal'|'friendly'|'brief'
 let _outreachType = 'new_outreach' // 'new_outreach' | 'follow_up'
 
@@ -457,7 +456,6 @@ async function generateDraftFlow() {
     const result = await enrichAndDraft({
       linkedinUrl: _linkedinUrl,
       companyHint,
-      companyHintSource: companyHint ? (_companyHintSource || 'manual') : null,
       userContext: fullContext,
       fullNameHint,
       tone: _selectedTone,
@@ -485,10 +483,6 @@ async function generateDraftFlow() {
     renderResult(result)
     populateCandidateSummary(result)
 
-    // Store pattern confidence data for diagnostics panel
-    const patternData = extractPatternData(result.debug)
-    if (patternData) await setStorage({ sourcedout_last_patterns: patternData })
-
     // Append to lookup history (last 5, shown in diagnostics)
     await storeLookupHistory(result)
     // Re-render diagnostics panel immediately so the new entry appears without a manual Refresh click
@@ -509,39 +503,6 @@ async function generateDraftFlow() {
     if (auth) {
       _state = 'AUTH_ERROR'
       showErrorBox('Your session expired. Click below to sign out and sign back in.', true)
-    } else if (err.code === 'NEED_FULL_NAME') {
-      // Free retry — backend did NOT charge a credit. Focus the input.
-      _state = 'NEED_NAME'
-      updateProfilePill('⚠ Name not detected — please type it')
-      showErrorBox(err.message || "Type the name above and click Lookup again — no credit charged.")
-      try {
-        const fields = $('customizeFields'); const toggle = $('customizeToggle')
-        if (fields && toggle) { fields.style.display = 'block'; toggle.textContent = '▾ Customize draft' }
-        $('fullNameInput').focus()
-      } catch {}
-    } else if (err.code === 'NEED_COMPANY') {
-      // Free retry — backend couldn't discover company from any free source.
-      _state = 'NEED_COMPANY'
-      updateProfilePill('⚠ Company not detected — please type it')
-      const candidates = Array.isArray(err.companyCandidates) ? err.companyCandidates : []
-      const suggestionsHtml = candidates.length
-        ? `<div style="margin-top:8px;font-size:12px;color:#6b7280;">Suggestions:</div>
-           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
-             ${candidates.map(c => `<button type="button" class="company-suggestion" data-name="${String(c.name).replace(/"/g,'&quot;')}" style="font-size:12px;padding:4px 10px;border:1px solid #d1d5db;border-radius:999px;background:#f9fafb;cursor:pointer;">${c.name}</button>`).join('')}
-           </div>`
-        : ''
-      showErrorBox((err.message || "Couldn't detect this person's company. Type it above and try again — no credit charged.") + suggestionsHtml, false, true)
-      try {
-        const fields = $('customizeFields'); const toggle = $('customizeToggle')
-        if (fields && toggle) { fields.style.display = 'block'; toggle.textContent = '▾ Customize draft' }
-        $('companyHintInput').focus()
-        document.querySelectorAll('.company-suggestion').forEach(btn => {
-          btn.addEventListener('click', () => {
-            $('companyHintInput').value = btn.getAttribute('data-name') || ''
-            _companyHintSource = 'suggestion'
-          })
-        })
-      } catch {}
     } else {
       _state = 'GENERIC_ERROR'
       const MESSAGES = {
@@ -586,17 +547,8 @@ function setupCustomizeToggle() {
 }
 
 // ── Page prefill strategy ─────────────────────────────────────────────────────
-// ms must exceed the content script's worst-case scrape time. scrapeCurrentCompanyRobust
-// can poll up to ~3.6s (3s experience-section poll + 0.6s top-card re-render poll) on
-// slow profiles, so the old 3000ms timeout could fire first and drop the response —
-// leaving _linkedinUrl unset and surfacing "Open a LinkedIn profile page first".
-function sendMessageWithTimeout(tabId, msg, ms = 6000) {
-  return Promise.race([
-    chrome.tabs.sendMessage(tabId, msg),
-    new Promise(resolve => setTimeout(() => resolve(null), ms))
-  ])
-}
-
+// No scraping in lite: the LinkedIn URL of the active tab is all the backend
+// needs — emailfinder.dev / FullEnrich resolve name, title, and company from it.
 async function prefillFromPage() {
   if (_prefillAborted || $('batchDrawer')?.classList.contains('open')) return
   try {
@@ -607,67 +559,11 @@ async function prefillFromPage() {
       tab.url.includes('linkedin.com/talent/') ||
       tab.url.includes('linkedin.com/recruiter/')
 
-    let data = null
-    try {
-      data = await sendMessageWithTimeout(tab.id, { type: 'scrape' })
-    } catch {}
-    // Retry once if the first attempt threw OR timed out (resolved null) — the
-    // content script may still be injecting, or the scrape ran long. Without this
-    // a null result leaves _linkedinUrl unset ("Open a LinkedIn profile page first").
-    if (!data && isLinkedInProfile) {
-      await new Promise(r => setTimeout(r, 800))
-      if (_prefillAborted || $('batchDrawer')?.classList.contains('open')) return
-      try {
-        data = await sendMessageWithTimeout(tab.id, { type: 'scrape' })
-      } catch {}
-    }
-
-    if (_prefillAborted || $('batchDrawer')?.classList.contains('open')) return
-
-    // Accept any LinkedIn profile URL: standard (/in/), Recruiter (/talent/, /recruiter/), etc.
-    if (data?.linkedin_url && data.linkedin_url.includes('linkedin.com/')) {
-      _linkedinUrl = data.linkedin_url
+    if (isLinkedInProfile) {
+      // Strip query/hash so cache lookups key on the canonical profile URL.
+      _linkedinUrl = tab.url.split('#')[0].split('?')[0]
       _state = 'PREFILLED'
-
-      // Pre-fill scraped full name so it gets passed as fullNameHint to enrichAndDraft.
-      // Without this, the Step 2-6 waterfall (haiku/google_cse/myemailverifier/apollo)
-      // SKIPs every step with reason: no_full_name_yet.
-      if (data.full_name && !$('fullNameInput').value.trim()) {
-        $('fullNameInput').value = data.full_name
-        updateProfilePill(data.full_name)
-      } else if (data.name_scrape_failed && !$('fullNameInput').value.trim()) {
-        // Make the failure visible — otherwise user clicks Lookup, backend
-        // returns NEED_FULL_NAME, and they're confused.
-        updateProfilePill('⚠ Name not detected — please type it')
-        setStatus("Couldn't read the name from this LinkedIn page. Type the name above to get a free, full waterfall lookup.", 'warning')
-        try { $('fullNameInput').focus() } catch {}
-      } else {
-        updateProfilePill('LinkedIn profile detected')
-      }
-
-      // Pre-fill scraped current company so the server-side waterfall has
-      // a domain to infer from. Without this, resolve_domain returns MISS
-      // and every step before FullEnrich skips.
-      if (data.current_company && $('companyHintInput') && !$('companyHintInput').value.trim()) {
-        $('companyHintInput').value = data.current_company
-      }
-      // If the company wasn't auto-detected, do NOT nag the recruiter to type it.
-      // The backend now auto-proceeds: it discovers the company from the LinkedIn
-      // URL (Google + FullEnrich), so a one-click lookup still works. Typing a
-      // company in Customize draft remains optional for power users.
-      // Stash the source so generateDraftFlow can forward it to the server logs.
-      _companyHintSource = data.current_company_source || null
-      try {
-        await setStorage({
-          sourcedout_last_scrape: {
-            at: Date.now(),
-            url: _linkedinUrl,
-            full_name: data.full_name || null,
-            current_company: data.current_company || null,
-            current_company_source: data.current_company_source || null,
-          },
-        })
-      } catch {}
+      updateProfilePill('LinkedIn profile detected')
 
       // Check saved-profile cache immediately — no credit needed
       try {
@@ -1555,9 +1451,7 @@ async function storeLookupHistory(result) {
       lastStep,
       timestamp:   Date.now(),
     }
-    const stored = await getStorage(['sourcedout_lookup_history', 'sourcedout_last_scrape'])
-    const scraperSource = stored.sourcedout_last_scrape?.current_company_source || null
-    entry.scraperSource = scraperSource
+    const stored = await getStorage(['sourcedout_lookup_history'])
     const history = Array.isArray(stored.sourcedout_lookup_history) ? stored.sourcedout_lookup_history : []
     history.unshift(entry)
     // Build the full debug trace for the "Copy debug" button
@@ -1570,7 +1464,6 @@ async function storeLookupHistory(result) {
         emailSource: entry.emailSource,
         hasEmail:    entry.hasEmail,
       },
-      scraper:   stored.sourcedout_last_scrape || null,
       waterfall: Array.isArray(result.debug?.records) ? result.debug.records : [],
       meta:      result.debug?.meta || null,
     }
@@ -1581,60 +1474,14 @@ async function storeLookupHistory(result) {
   } catch (e) { console.warn('storeLookupHistory failed:', e) }
 }
 
-// ── Pattern data extraction helper ────────────────────────────────────────────
-function extractPatternData(debug) {
-  if (!debug?.records) return null
-  const rec = debug.records.find(r => r.step === 'haiku_pattern_cache' && r.status === 'HIT')
-  if (!rec?.meta?.all) return null
-  return {
-    all:         rec.meta.all,
-    top_pattern: rec.meta.top_pattern || null,
-    is_catchall: !!rec.meta.is_catchall,
-  }
-}
-
-// ── Scraper path trail renderer ───────────────────────────────────────────────
-// Renders a visual pipeline of scraper steps tried (grey) → hit (coloured).
-// source: the value stored in current_company_source by content.js
-// container: the DOM element to render into
-const SCRAPER_STEPS = [
-  { key: 'json-ld',               label: 'JSON-LD',       quality: 'excellent' },
-  { key: 'json-ld-late',          label: 'JSON-LD(late)', quality: 'excellent' },
-  { key: 'aria-label',            label: 'aria-btn',      quality: 'excellent' },
-  { key: 'aria-label-text',       label: 'aria-btn',      quality: 'excellent' },
-  { key: 'topcard-logo',          label: 'logo',           quality: 'excellent' },
-  { key: 'topcard-logo-text',     label: 'logo-txt',       quality: 'excellent' },
-  { key: 'topcard-2025',          label: 'top-card',       quality: 'excellent' },
-  { key: 'topcard-2025-span',     label: 'top-card-span',  quality: 'excellent' },
-  { key: 'topcard-2025-slug',     label: 'top-card-slug',  quality: 'excellent' },
-  { key: 'topcard-2025-text',     label: 'top-card-txt',   quality: 'good' },
-  { key: 'experience-link',       label: 'exp-link',       quality: 'good' },
-  { key: 'experience-link-span',  label: 'exp-span',       quality: 'good' },
-  { key: 'experience-link-slug',  label: 'exp-slug',       quality: 'good' },
-  { key: 'experience-subtitle',   label: 'exp-subtitle',   quality: 'good' },
-  { key: 'experience-bold',       label: 'exp-bold',       quality: 'good' },
-  { key: 'og-description',        label: 'OG meta',        quality: 'good' },
-  { key: 'topcard-subtitle',      label: 'subtitle',       quality: 'good' },
-  { key: 'current-role-badge',    label: 'role badge',     quality: 'good' },
-  { key: 'broad-link',            label: 'broad-link',     quality: 'fallback' },
-]
-const SCRAPER_QUALITY = Object.fromEntries(SCRAPER_STEPS.map(s => [s.key, s.quality]))
-const QUALITY_DOT = { excellent: '🟢', good: '🔵', fallback: '🟠' }
-
+// ── Waterfall trail renderer ──────────────────────────────────────────────────
+// Renders a visual pipeline of enrichment steps tried (grey) → hit (coloured).
 const WATERFALL_STEPS = [
-  { key: 'haiku_pattern_cache',              label: 'Pattern Cache', quality: 'excellent' },
-  { key: 'haiku_email_guess',                label: 'Haiku Guess',   quality: 'good' },
-  { key: 'myemailverifier_haiku',            label: 'MEV',           quality: 'good' },
-  { key: 'google_search',                    label: 'Google',        quality: 'good' },
-  { key: 'brave_search',                     label: 'Brave',         quality: 'good' },
-  { key: 'haiku_refine_candidates',          label: 'Haiku Refine',  quality: 'good' },
-  { key: 'myemailverifier_search_round1',    label: 'MEV rd1',       quality: 'good' },
-  { key: 'pdl_person_enrichment',            label: 'PDL',           quality: 'good' },
-  { key: 'myemailverifier_search_candidates', label: 'MEV rd2',      quality: 'good' },
-  { key: 'personal_email_found',             label: 'Personal ⚡',   quality: 'event' },
-  { key: 'fullenrich_v2',                    label: 'FullEnrich',    quality: 'fallback' },
+  { key: 'cache',         label: 'Cache',       quality: 'excellent' },
+  { key: 'emailfinder',   label: 'EmailFinder', quality: 'good' },
+  { key: 'fullenrich_v2', label: 'FullEnrich',  quality: 'fallback' },
 ]
-const WATERFALL_WIN_STATUS = new Set(['OK', 'HIT', 'RISKY_FALLBACK'])
+const WATERFALL_WIN_STATUS = new Set(['OK', 'HIT'])
 
 function renderWaterfallPath(records, container) {
   if (!container) return
@@ -1665,15 +1512,6 @@ function renderWaterfallPath(records, container) {
     }
     first = false
     const chip = document.createElement('span')
-    // ── Event chip: personal email found — still hunting for work ────────────
-    if (s.quality === 'event' && rec.status === 'PERSONAL_HUNTING') {
-      chip.className = 'scraper-step hit-event'
-      chip.textContent = s.label
-      chip.title = rec.meta?.note || 'personal email found — still hunting for work address'
-      if (rec.meta?.email) chip.title += ` (${rec.meta.email})`
-      trail.appendChild(chip)
-      continue  // event chip: don't set hitReached, keep rendering subsequent steps
-    }
     const isWin = WATERFALL_WIN_STATUS.has(rec.status)
     if (isWin) {
       chip.className = `scraper-step hit-${s.quality}`
@@ -1703,72 +1541,17 @@ function renderWaterfallPath(records, container) {
   container.appendChild(trail)
 }
 
-function renderScraperPath(source, container) {
-  if (!container) return
-  container.innerHTML = ''
-  if (!source) {
-    const blank = document.createElement('span')
-    blank.className = 'field-value'
-    blank.style.color = '#d1d5db'
-    blank.textContent = '— (no scrape yet)'
-    container.appendChild(blank)
-    return
-  }
-  const hitIdx = SCRAPER_STEPS.findIndex(s => s.key === source)
-  if (hitIdx === -1) {
-    const raw = document.createElement('span')
-    raw.className = 'field-value'
-    raw.textContent = source
-    container.appendChild(raw)
-    return
-  }
-  const trail = document.createElement('div')
-  trail.className = 'scraper-trail'
-  for (let i = 0; i <= hitIdx; i++) {
-    const step = SCRAPER_STEPS[i]
-    if (i > 0) {
-      const arrow = document.createElement('span')
-      arrow.className = 'scraper-step arrow'
-      arrow.textContent = '›'
-      trail.appendChild(arrow)
-    }
-    const chip = document.createElement('span')
-    if (i < hitIdx) {
-      chip.className = 'scraper-step miss'
-      chip.textContent = step.label
-      chip.title = `${step.label}: tried, no result`
-    } else {
-      chip.className = `scraper-step hit-${step.quality}`
-      chip.textContent = step.quality === 'fallback' ? `${step.label} ⚠` : `${step.label} ✓`
-      chip.title = step.quality === 'fallback'
-        ? `${step.label}: fallback — result may need verification`
-        : `${step.label}: matched successfully`
-    }
-    trail.appendChild(chip)
-  }
-  container.appendChild(trail)
-}
-
 // ── Diagnostics panel ─────────────────────────────────────────────────────────
 function renderDiscovery(waterfall, emailSource, fieldEl, el) {
   if (!fieldEl || !el) return
   if (!Array.isArray(waterfall) || !waterfall.length) { fieldEl.style.display = 'none'; return }
 
   const STEP_LABELS = {
-    'haiku_pattern_cache':              { label: 'Pattern cache',   icon: '🗄️' },
-    'haiku_email_guess':                { label: 'Haiku guess',     icon: '🤖' },
-    'myemailverifier_haiku':            { label: 'MEV verify',      icon: '✅' },
-    'google_search':                    { label: 'Google search',   icon: '🔍' },
-    'brave_search':                     { label: 'Brave search',    icon: '🔍' },
-    'haiku_refine_candidates':          { label: 'Haiku refine',    icon: '🤖' },
-    'myemailverifier_search_round1':    { label: 'MEV verify ①',   icon: '✅' },
-    'myemailverifier_search_candidates':{ label: 'MEV verify ②',   icon: '✅' },
-    'pdl_person_enrichment':            { label: 'PDL lookup',      icon: '📋' },
-    'fullenrich_v2':                    { label: 'FullEnrich',      icon: '⚡' },
-    'post_fullenrich_retry':            { label: 'Retry',           icon: '🔄' },
-    'resolve_domain':                   { label: 'Domain resolve',  icon: '🌐' },
-    'sonnet_draft':                     { label: 'Draft (Sonnet)',  icon: '✍️' },
-    'saved_profile':                    { label: 'Cache hit',       icon: '💾' },
+    'cache':         { label: 'Cache',           icon: '💾' },
+    'emailfinder':   { label: 'EmailFinder',     icon: '📧' },
+    'fullenrich_v2': { label: 'FullEnrich',      icon: '⚡' },
+    'sonnet_draft':  { label: 'Draft (Sonnet)',  icon: '✍️' },
+    'saved_profile': { label: 'Cache hit',       icon: '💾' },
   }
 
   // Only show steps that actually ran (not SKIP), except sonnet_draft
@@ -1797,15 +1580,7 @@ function renderDiscovery(waterfall, emailSource, fieldEl, el) {
 
     // Build label with useful meta
     let label = `${info.icon} ${info.label}`
-    if (rec.step === 'haiku_pattern_cache' && st === 'HIT' && rec.meta?.top_pattern) {
-      label += ` · ${rec.meta.top_pattern}${rec.meta.top_count ? ' ×' + rec.meta.top_count : ''}`
-    } else if ((rec.step === 'myemailverifier_haiku' || rec.step === 'myemailverifier_search_round1' || rec.step === 'myemailverifier_search_candidates') && rec.meta?.verified != null) {
-      label += ` · ${rec.meta.verified} verified`
-    } else if (rec.step === 'haiku_email_guess' && rec.meta?.candidates != null) {
-      label += ` · ${rec.meta.candidates} candidates`
-    } else if (rec.step === 'pdl_person_enrichment' && rec.meta?.email) {
-      label += ' · found'
-    }
+    if (rec.meta?.email) label += ' · found'
     if (st === 'HIT')  label += ' ✓'
     if (st === 'MISS') label += ' ✗'
 
@@ -1818,19 +1593,12 @@ function renderDiscovery(waterfall, emailSource, fieldEl, el) {
 
   // Outcome summary line
   const outcome = document.createElement('div')
-  const mevHit  = active.find(r => r.step?.startsWith('myemailverifier') && (r.meta?.verified || 0) > 0)
-  const pdlHit  = active.find(r => r.step === 'pdl_person_enrichment' && r.meta?.email)
-  const feHit   = active.find(r => r.step === 'fullenrich_v2' && r.status !== 'MISS')
-  const cacheHit= active.find(r => r.step === 'haiku_pattern_cache' && r.status === 'HIT')
+  const efHit = active.find(r => r.step === 'emailfinder' && r.status === 'OK')
+  const feHit = active.find(r => r.step === 'fullenrich_v2' && r.status === 'OK')
 
-  if (mevHit) {
-    const count = mevHit.meta.verified
-    const via   = cacheHit ? `company pattern (${cacheHit.meta?.top_pattern || 'first.last'})` : 'search + Haiku refinement'
+  if (efHit) {
     outcome.className = 'disc-outcome'
-    outcome.textContent = `${count} email${count > 1 ? 's' : ''} verified via ${via}`
-  } else if (pdlHit) {
-    outcome.className = 'disc-outcome'
-    outcome.textContent = 'Email sourced from People Data Labs'
+    outcome.textContent = 'Email verified in real time by emailfinder.dev'
   } else if (feHit) {
     outcome.className = 'disc-outcome'
     outcome.textContent = 'Email sourced from FullEnrich'
@@ -1845,60 +1613,28 @@ async function renderDiagnostics() {
   try {
     const manifest = chrome?.runtime?.getManifest?.() || {}
     const ext = manifest.version || CONFIG.version || '—'
-    const scraperBuild = CONFIG.scraperBuild || '—'
     const stored = await getStorage([
       'sourcedout_server_version',
       'sourcedout_server_version_at',
-      'sourcedout_last_scrape',
-      'sourcedout_last_patterns',
       'sourcedout_lookup_history',
       'sourcedout_last_debug_trace',
     ])
     const serverVersion = stored.sourcedout_server_version || '—'
-    const last          = stored.sourcedout_last_scrape || null
-    const patternData   = stored.sourcedout_last_patterns || null
     const history       = Array.isArray(stored.sourcedout_lookup_history) ? stored.sourcedout_lookup_history : []
     const lastTrace     = stored.sourcedout_last_debug_trace || null
 
     if ($('diagExtVersion')) $('diagExtVersion').textContent = ext
-    if ($('diagScraperBuild')) $('diagScraperBuild').textContent = scraperBuild
     if ($('diagServerVersion')) {
       const ago = stored.sourcedout_server_version_at
         ? ` (${Math.max(1, Math.round((Date.now() - stored.sourcedout_server_version_at) / 60000))} min ago)`
         : ''
       $('diagServerVersion').textContent = serverVersion === '—' ? '— (run a draft to detect)' : `${serverVersion}${ago}`
     }
-    if ($('diagLastCompany')) $('diagLastCompany').textContent = last?.current_company || '— (no scrape yet)'
-    renderScraperPath(last?.current_company_source || null, $('diagScraperPath'))
     renderWaterfallPath(lastTrace?.waterfall || null, $('diagWaterfallPath'))
     renderDiscovery(lastTrace?.waterfall || null, lastTrace?.emailSource || null, $('diagDiscoveryField'), $('diagDiscovery'))
 
-    const patternsField = $('diagPatternsField')
-    const patternsEl    = $('diagPatterns')
-    if (patternsField && patternsEl) {
-      if (patternData?.all) {
-        patternsField.style.display = 'block'
-        patternsEl.innerHTML = ''
-        const parts = patternData.all.split(',').map(s => s.trim()).filter(Boolean)
-        parts.forEach((part, i) => {
-          const chip = document.createElement('span')
-          const isTop = i === 0
-          chip.className = `diag-pattern-chip ${isTop ? 'top' : 'alt'}${patternData.is_catchall ? ' catchall' : ''}`
-          chip.textContent = part.replace('×', ' ×')
-          chip.title = isTop ? 'Top pattern (highest verified count)' : 'Alternate pattern'
-          patternsEl.appendChild(chip)
-        })
-        if (patternData.is_catchall) {
-          const warnChip = document.createElement('span')
-          warnChip.className = 'diag-pattern-chip warn'
-          warnChip.textContent = '⚠ catch-all domain'
-          warnChip.title = 'MX catch-all — email existence cannot be verified; Haiku picks best pattern'
-          patternsEl.appendChild(warnChip)
-        }
-      } else {
-        patternsField.style.display = 'none'
-      }
-    }
+    // Pattern-cache diagnostics removed in lite (no pattern cache step).
+    if ($('diagPatternsField')) $('diagPatternsField').style.display = 'none'
 
     // ── Lookup history ────────────────────────────────────────────────────────
     const histSection = $('diagHistorySection')
@@ -1908,38 +1644,19 @@ async function renderDiagnostics() {
         histSection.style.display = 'block'
         histEl.innerHTML = ''
         const SOURCE_ICONS = {
-          'haiku_pattern_cache':   '🗄️',
-          'haiku+verifier':        '🤖',
-          'google_search':         '🔍',
-          'brave_search':          '🔍',
-          'pdl_person_enrichment': '📋',
-          'haiku_refine':          '🤖',
-          'fullenrich_v2':         '⚡',
-          'saved_profile':         '💾',
+          'emailfinder':   '📧',
+          'fullenrich_v2': '⚡',
+          'saved_profile': '💾',
         }
         const SOURCE_SHORT = {
-          'haiku_pattern_cache':   'pattern cache',
-          'haiku+verifier':        'Haiku+MEV',
-          'google_search':         'Google+MEV',
-          'brave_search':          'Brave+MEV',
-          'pdl_person_enrichment': 'PDL',
-          'haiku_refine':          'Haiku refine',
-          'fullenrich_v2':         'FullEnrich',
-          'saved_profile':         'saved profile',
+          'emailfinder':   'EmailFinder',
+          'fullenrich_v2': 'FullEnrich',
+          'saved_profile': 'saved profile',
         }
         const STEP_SHORT = {
-          'fullenrich_v2':                      'FullEnrich',
-          'post_fullenrich_retry':              'retry',
-          'pdl_person_enrichment':              'PDL',
-          'myemailverifier_search_candidates':  'MEV rd2',
-          'myemailverifier_search_round1':      'MEV rd1',
-          'haiku_refine_candidates':            'Haiku refine',
-          'brave_search':                       'Brave',
-          'google_search':                      'Google',
-          'myemailverifier_haiku':              'MEV+Haiku',
-          'haiku_email_guess':                  'Haiku guess',
-          'haiku_pattern_cache':                'pattern cache',
-          'resolve_domain':                     'domain resolve',
+          'fullenrich_v2': 'FullEnrich',
+          'emailfinder':   'EmailFinder',
+          'cache':         'cache',
         }
         history.forEach(entry => {
           const row = document.createElement('div')
@@ -1970,17 +1687,6 @@ async function renderDiagnostics() {
 
           row.appendChild(icon)
           row.appendChild(name)
-          // Scraper quality dot: 🟢 excellent / 🔵 good / 🟠 fallback
-          if (entry.scraperSource) {
-            const q = SCRAPER_QUALITY[entry.scraperSource]
-            if (q) {
-              const dot = document.createElement('span')
-              dot.className = 'diag-scraper-dot'
-              dot.textContent = QUALITY_DOT[q]
-              dot.title = `Scraper: ${entry.scraperSource} (${q})`
-              row.appendChild(dot)
-            }
-          }
           row.appendChild(src)
           row.appendChild(ago)
           histEl.appendChild(row)
@@ -1990,16 +1696,7 @@ async function renderDiagnostics() {
       }
     }
 
-    const mismatchEl = $('diagMismatch')
-    if (mismatchEl) {
-      const mismatch = serverVersion !== '—' && scraperBuild !== '—' && serverVersion !== scraperBuild
-      if (mismatch) {
-        mismatchEl.style.display = 'block'
-        mismatchEl.textContent = `Heads up: extension build (${scraperBuild}) does not match server (${serverVersion}). Pull latest files and reload the extension in chrome://extensions.`
-      } else {
-        mismatchEl.style.display = 'none'
-      }
-    }
+    if ($('diagMismatch')) $('diagMismatch').style.display = 'none'
   } catch (e) { console.warn('renderDiagnostics failed:', e) }
 }
 

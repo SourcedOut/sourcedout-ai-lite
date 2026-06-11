@@ -1,28 +1,16 @@
 // ─── config.js ────────────────────────────────────────────────────────────────
 export const CONFIG = {
-  supabaseUrl: 'https://szxjcitbjcpkhxtjztay.supabase.co',
-  supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6eGpjaXRiamNwa2h4dGp6dGF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3ODc2MDgsImV4cCI6MjA4NzM2MzYwOH0.9sgQhrNY8GGeMWIHPTnNehrM8eGD0tMHM6FCKDf-k08',
+  // SourcedOut AI Lite project (separate from prod SourcedOut)
+  supabaseUrl: 'https://ddhdffftvujupflqggki.supabase.co',
+  supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkaGRmZmZ0dnVqdXBmbHFnZ2tpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNzYyNjUsImV4cCI6MjA5NjY1MjI2NX0.Z1JQ9WoC2cd1yhaHzbghVlmxP6cFnx2VXTtQR6ln93U',
 
-  fullenrichUrl: 'https://app.fullenrich.com/api/v1',
+  appName: 'SourcedOut Lite',
+  version: '2.0.0',
 
-  appName:    'SourcedOut',
-  version:    '1.1.1',
-  // Bump this every meaningful extension/scraper update so the popup
-  // diagnostics panel can tell you exactly which local files are loaded.
-  // Compare to the server's FUNCTION_VERSION (shown side-by-side).
-  scraperBuild: '2026-06-08-auto-proceed-v41.3',
-  pricingUrl: 'https://szxjcitbjcpkhxtjztay.supabase.co/functions/v1/create-checkout',
-
-  stripe: {
-    sourcer: {
-      monthly: 'price_1T3k99HBH8to4gGBHlNU3ewA',
-      yearly:  'price_1T3kAOHBH8to4gGBQvWk4fiF',
-    },
-    pro: {
-      monthly: 'price_1T3kIDHBH8to4gGBnW3QoNBz',
-      yearly:  'price_1T3kIvHBH8to4gGBV7WWfsD4',
-    },
-  },
+  // Billing is not wired up in lite (the Stripe checkout function lives in the
+  // prod project) — everyone is on the free tier. pricingUrl is null so the
+  // upgrade CTA stays hidden.
+  pricingUrl: null,
 
   tiers: {
     free:    { lookups: 10,  ai_runs: 20,  emails: 10,   label: 'Free'    },
