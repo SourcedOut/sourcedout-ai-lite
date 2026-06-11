@@ -886,11 +886,8 @@ function _statusBadge(status) {
 function _sourceBadge(source) {
   if (!source) return ''
   const map = {
-    'haiku+verifier':         ['info-sm', 'Haiku'],
-    'google_cse':             ['info-sm', 'Google'],
-    'permutator+verifier':    ['info-sm', 'MEV'],
-    'apollo':                 ['info-sm', 'Apollo'],
-    'fullenrich_v2':          ['warn-sm', 'FullEnrich'],
+    'emailfinder':   ['info-sm', 'EmailFinder'],
+    'fullenrich_v2': ['warn-sm', 'FullEnrich'],
   }
   const [cls, label] = map[source] || ['gray-sm', source]
   return `<span class="batch-badge ${cls}" title="Email source: ${source}">${label}</span>`

@@ -6,7 +6,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2"
 // The only LLM calls are draft generation (Sonnet) and job summarization (Haiku).
 
 // Bump this string every meaningful deploy so we can verify what's live.
-const FUNCTION_VERSION = "2026-06-10-lite-v1.0"
+const FUNCTION_VERSION = "2026-06-11-lite-v1.1"
 console.log(`[enrich-lite boot] FUNCTION_VERSION=${FUNCTION_VERSION}`)
 
 const cors = {
@@ -858,9 +858,12 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
         (candidate.current_company && String(candidate.current_company).trim()) ||
         (candidate.enriched_company && String(candidate.enriched_company).trim()) ||
         null
-      const csvEmailDomain = (candidate.csv_email && candidate.csv_email.includes('@'))
+      const csvRawDomain = (candidate.csv_email && candidate.csv_email.includes('@'))
         ? candidate.csv_email.split('@')[1].toLowerCase()
         : null
+      // A personal CSV email (gmail etc.) says nothing about the employer's
+      // domain — using it would make emailfinder hunt for a work email at gmail.com.
+      const csvEmailDomain = (csvRawDomain && !PERSONAL_EMAIL_DOMAINS.has(csvRawDomain)) ? csvRawDomain : null
 
       // Without a LinkedIn URL the person endpoint still works if we have a
       // name plus a company or email domain. Otherwise there is nothing to go on.
@@ -1267,7 +1270,8 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
     // are served free by the cache step above; the lock is released explicitly at
     // the end of the run and expires via TTL if the worker dies mid-flight.
     try {
-      const { data: lockOk, error: lockErr } = await db.rpc('acquire_lookup_lock', { p_user_id: user.id, p_linkedin_url: linkedinUrl })
+      // TTL must outlast the worst-case waterfall (emailfinder 60s + FullEnrich ~113s)
+      const { data: lockOk, error: lockErr } = await db.rpc('acquire_lookup_lock', { p_user_id: user.id, p_linkedin_url: linkedinUrl, p_ttl_seconds: 240 })
       if (!lockErr && lockOk === false) {
         return json({ error: { code: 'LOOKUP_IN_PROGRESS', message: 'This profile is already being looked up. Give it a moment and try again — no extra credit will be charged.' }, debug: { correlationId, records } }, 409)
       }
