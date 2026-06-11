@@ -17,7 +17,7 @@ LinkedIn URL ──► emailfinder.dev ──► (miss?) FullEnrich ──► Cl
 | `manifest.json`, `popup.js`, `batch.js`, `background.js`, `ui/`, `core/`, `icons/`, `auth.html`, `auth-callback.js`, `config.js` | The Chrome extension (vanilla JS, Manifest v3, no build step) |
 | `supabase/functions/enrich-lite/` | The entire backend: one Supabase edge function with 16 actions (enrich+draft, saved jobs/profiles, campaigns/CSV bulk flow, job summarization) |
 | `supabase/migrations/` | Schema snapshot of the Lite database |
-| `src/`, `package.json`, Next.js configs | **Future webapp** — untouched Next.js + shadcn starter, not yet wired up |
+| `src/`, `package.json`, Next.js configs | Older snapshot of the webapp starter. **The real webapp-in-progress lives in the `softgenai/sg-b3222b51-...` repo** (dashboard, auth, campaigns pages already built) — work there, not here |
 | `legacy/enrich-and-draft/` | Reference copy of the original 4,000-line waterfall function (not deployed) |
 
 ## Supabase projects — important
