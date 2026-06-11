@@ -1395,41 +1395,18 @@ function setupJobTab() {
 }
 
 // ── Email source label builder ─────────────────────────────────────────────────
-function buildEmailSourceLabel(emailSource, debug) {
+function buildEmailSourceLabel(emailSource, _debug) {
   if (!emailSource || emailSource === 'none') return null
 
   const SOURCE_MAP = {
-    'haiku_pattern_cache':    { icon: '🗄️', label: 'pattern cache' },
-    'haiku+verifier':         { icon: '🤖', label: 'Haiku + MEV verified' },
-    'google_search':          { icon: '🔍', label: 'Google search + MEV' },
-    'brave_search':           { icon: '🔍', label: 'Brave search + MEV' },
-    'pdl_person_enrichment':  { icon: '📋', label: 'PDL enrichment' },
-    'haiku_refine':           { icon: '🤖', label: 'Haiku refinement' },
-    'fullenrich_v2':          { icon: '⚡', label: 'FullEnrich' },
-    'saved_profile':          { icon: '💾', label: 'saved profile' },
+    'emailfinder':   { icon: '📧', label: 'EmailFinder (real-time SMTP verified)' },
+    'fullenrich_v2': { icon: '⚡', label: 'FullEnrich' },
+    'saved_profile': { icon: '💾', label: 'saved profile' },
   }
 
   const entry = SOURCE_MAP[emailSource]
   if (!entry) return null
-
-  let detail = null
-  if (emailSource === 'haiku_pattern_cache' && debug?.records) {
-    const rec = debug.records.find(r => r.step === 'haiku_pattern_cache' && r.status === 'HIT')
-    if (rec?.meta?.top_pattern && rec?.meta?.top_count != null) {
-      detail = `${rec.meta.top_pattern} ×${rec.meta.top_count}`
-    }
-    // If Haiku picked between multiple patterns, annotate that
-    const haikuRec = debug.records.find(r =>
-      r.step === 'myemailverifier_haiku' && r.meta?.via === 'haiku_pattern_pick'
-    )
-    if (haikuRec && !detail) {
-      detail = `Haiku picked from ${haikuRec.meta?.patterns_considered ?? '?'} patterns`
-    } else if (haikuRec && detail) {
-      detail += ' (Haiku)'
-    }
-  }
-
-  return { icon: entry.icon, label: entry.label, detail }
+  return { icon: entry.icon, label: entry.label, detail: null }
 }
 
 // ── Lookup history storage ─────────────────────────────────────────────────────
