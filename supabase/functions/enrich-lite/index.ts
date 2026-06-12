@@ -6,7 +6,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2"
 // The only LLM calls are draft generation (Sonnet) and job summarization (Haiku).
 
 // Bump this string every meaningful deploy so we can verify what's live.
-const FUNCTION_VERSION = "2026-06-11-lite-v1.2"
+const FUNCTION_VERSION = "2026-06-12-lite-v1.3"
 console.log(`[enrich-lite boot] FUNCTION_VERSION=${FUNCTION_VERSION}`)
 
 const cors = {
@@ -193,6 +193,8 @@ async function emailFinderByPerson(
 // ── Generect: pattern-generated email with server-side verification ───────────
 // Needs first/last name + the company web domain. Credits are consumed on
 // their side only when an email is returned (valid or catch_all).
+// API (docs.generect.com): POST /api/linkedin/email_finder/ with Token auth and
+// an ARRAY body; response rows carry result=valid|invalid|not_found + catch_all.
 const GENERECT_TIMEOUT_MS = 30_000
 
 async function generectFindEmail(firstName: string, lastName: string, domain: string, key: string): Promise<{
@@ -200,16 +202,20 @@ async function generectFindEmail(firstName: string, lastName: string, domain: st
   status: 'valid' | 'catch_all' | 'not_found'
   raw: any
 }> {
-  const res = await fetch('https://api.generect.com/emails/generate', {
+  const res = await fetch('https://api.generect.com/api/linkedin/email_finder/', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({ first_name: firstName, last_name: lastName, domain }),
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Token ${key}` },
+    body: JSON.stringify([{ first_name: firstName, last_name: lastName, domain }]),
     signal: AbortSignal.timeout(GENERECT_TIMEOUT_MS),
   })
   const data = await res.json().catch(() => null)
   if (!res.ok) throw new Error(`generect error ${res.status}: ${JSON.stringify(data)}`)
-  const status = (data?.status === 'valid' || data?.status === 'catch_all') ? data.status : 'not_found'
-  return { email: (status !== 'not_found' && data?.email) ? data.email : null, status, raw: data }
+  const row = Array.isArray(data) ? data[0] : data
+  const email = row?.valid_email || null
+  const status = (row?.result === 'valid' && email)
+    ? (row?.catch_all ? 'catch_all' : 'valid')
+    : 'not_found'
+  return { email: status === 'not_found' ? null : email, status, raw: row ?? data }
 }
 
 // ── FullEnrich v2: LinkedIn URL → work email, personal email, name, title, company ──
