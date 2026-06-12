@@ -130,8 +130,8 @@
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-secondary { background: var(--surface); color: var(--text); border: 1.5px solid var(--border); }
   .btn-secondary:hover { background: var(--surface2); border-color: var(--border-bright); }
-  .btn-outlook { background: #0078d4; color: white; }
-  .btn-outlook:hover { background: #006cbf; }
+  .btn-outlook { background: var(--surface); color: var(--text); border: 1.5px solid var(--border); }
+  .btn-outlook:hover { background: var(--surface2); }
   .btn-gmail { background: var(--surface); color: var(--text); border: 1.5px solid var(--border); }
   .btn-gmail:hover { background: var(--surface2); }
   .btn-danger { background: #2a0f0f; color: #f87171; border: 1.5px solid #5a1a1a; }
@@ -140,7 +140,7 @@
   .btn-ghost:hover { background: var(--surface); color: var(--text); }
 
   /* ── Cards ── */
-  .card { background: var(--surface); border-radius: 8px; border: 1px solid var(--border); padding: 11px 13px; margin-bottom: 8px; }
+  .card { background: var(--surface); border-radius: 8px; border: 1px solid var(--border); padding: 11px 13px; margin-bottom: 12px; }
   .card:last-child { margin-bottom: 0; }
   .card-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 8px; }
 
@@ -151,57 +151,16 @@
   #statusMessage.warn { background: #2a1f0a; color: #fbbf24; border: 1px solid #78350f; display: block; }
   #statusMessage.error { background: #2a0f0f; color: #f87171; border: 1px solid #5a1a1a; display: block; }
 
-  /* ── Vertical step tracker ── */
-  .progress-step {
-    display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; position: relative;
-  }
-  .progress-step:not(:last-child)::before {
-    content: ''; position: absolute; left: 7px; top: 24px; bottom: -8px; width: 2px;
-    background: var(--border); border-radius: 1px; z-index: 0;
-  }
-  .progress-step.step-active:not(:last-child)::before,
-  .progress-step.step-done:not(:last-child)::before {
-    background: var(--accent-mid);
-  }
-  .progress-dot {
-    width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
-    background: var(--border); border: 2px solid var(--border); position: relative; z-index: 1;
-    transition: all 0.3s;
-  }
-  .progress-dot.active {
-    width: 14px; height: 14px; margin-left: -1px;
-    background: var(--grad);
-    box-shadow: 0 0 14px rgba(224, 90, 24, 0.7);
-    animation: glow-pulse 1.4s ease-in-out infinite;
-  }
-  .progress-dot.done {
-    background: var(--grad);
-    border-color: var(--accent-amber);
-  }
-  .progress-dot.done::after {
-    content: '✓'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    font-size: 8px; color: white; font-weight: 700;
-  }
-  @keyframes glow-pulse {
-    0%, 100% { box-shadow: 0 0 14px rgba(224, 90, 24, 0.7); }
-    50% { box-shadow: 0 0 22px rgba(224, 90, 24, 0.9); }
-  }
-  .progress-label { font-size: 12px; color: var(--text-faint); padding-top: 1px; }
-  .progress-label.active { font-size: 13px; color: white; font-weight: 700; }
-  .progress-label.done { color: var(--text-muted); }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .spinner {
-    width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent-mid);
-    border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle;
-  }
-
-  /* ── Working Button ── */
-  .btn-working {
-    width: 100%; padding: 14px; border-radius: 10px; font-size: 14px; font-weight: 600;
-    background: var(--surface); color: var(--text); border: 1px solid var(--border-bright);
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    margin-top: 12px;
-  }
+  /* ── Lookup progress bar ── */
+  .progress-card { padding: 12px 13px; }
+  .progress-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .progress-phase-label { font-size: 12px; font-weight: 600; color: var(--text); }
+  .progress-pct { font-size: 12px; font-weight: 700; color: var(--accent-amber); font-variant-numeric: tabular-nums; }
+  .progress-bar-wrap { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; width: 0%; background: var(--grad); border-radius: 3px; }
+  .progress-card.success .progress-phase-label { color: #4ade80; }
+  .progress-card.error .progress-bar-fill { background: #f87171; }
+  .progress-card.error .progress-phase-label, .progress-card.error .progress-pct { color: #f87171; }
 
   /* ── Result summary ── */
   #resultSummary { display: none; }
@@ -229,27 +188,16 @@
   .candidate-summary.visible { display: block; }
   .cs-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
   .cs-name {
-    font-size: 13px; font-weight: 700; color: var(--text);
-    background: var(--grad); padding: 3px 10px; border-radius: 12px;
-    box-shadow: 0 2px 6px rgba(201, 58, 10, 0.25);
+    font-size: 14px; font-weight: 700;
+    background: var(--grad);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
+  .cs-meta.detected { color: var(--accent-amber); }
   .cs-actions { display: flex; align-items: center; gap: 6px; }
   .cs-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; line-height: 1.4; }
   .cs-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
   .cs-link { font-size: 11px; color: var(--accent-mid); text-decoration: none; word-break: break-all; }
   .cs-link:hover { text-decoration: underline; }
-
-  /* ── Profile detected pill ── */
-  .profile-detected-pill {
-    display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box;
-    background: var(--grad); border: none; border-radius: 24px;
-    padding: 12px 18px; margin-bottom: 12px; font-size: 14px; font-weight: 700; color: white;
-    box-shadow: 0 4px 12px rgba(201, 58, 10, 0.3);
-  }
-  .profile-pill-dot {
-    width: 8px; height: 8px; border-radius: 50%; background: white; flex-shrink: 0;
-  }
 
   /* ── Customize toggle ── */
   .customize-toggle {
@@ -353,7 +301,8 @@
   body.dark input:focus, body.dark textarea:focus, body.dark select:focus { border-color: #93b4ef; }
   body.dark label { color: var(--text-muted); }
   body.dark .helper-text { color: #4b5563; }
-  body.dark .btn-secondary, body.dark .btn-gmail { background: #252836; color: #d1d5db; border-color: #3a3d52; }
+  body.dark .btn-secondary, body.dark .btn-gmail, body.dark .btn-outlook { background: #252836; color: #d1d5db; border-color: #3a3d52; }
+  body.dark .progress-phase-label { color: #e5e7eb; }
   body.dark .btn-ghost { background: transparent; color: var(--text-muted); border-color: #2d3148; }
   body.dark .btn-ghost:hover { background: #252836; color: #d1d5db; }
   body.dark .btn-danger { background: #2a0f0f; color: #f87171; border-color: #5a1a1a; }
@@ -423,36 +372,40 @@
   body.dark .saved-job-delete:hover { color: #f87171; }
 
   /* ── Profile-related utility classes ── */
-  .profile-cache-badge { font-size:10px; background:#eff6ff; color:#1d4ed8; padding:2px 7px; border-radius:10px; font-weight:600; }
-  body.dark .profile-cache-badge { background:var(--surface2); color:#93b4ef; }
-  .btn-bookmark-saved { background:#f0fdf4; color:#16a34a; border-color:#bbf7d0; }
+  .profile-cache-badge { font-size:10px; background:var(--surface2); color:var(--accent-amber); border:1px solid var(--border-bright); padding:2px 7px; border-radius:10px; font-weight:600; }
+  body.dark .profile-cache-badge { background:var(--surface2); color:#93b4ef; border-color:#3a3d52; }
+  .btn-bookmark-saved { background:#0d2a1a; color:#4ade80; border-color:#166534; }
   body.dark .btn-bookmark-saved { background:#0d2a1a; color:#4ade80; border-color:#166534; }
   .email-type-badge { font-size:10px; margin-left:5px; padding:1px 5px; border-radius:10px; font-weight:600; }
   .email-type-badge.work     { background:#dcfce7; color:#166534; }
   .email-type-badge.personal { background:#fef3c7; color:#92400e; }
   body.dark .email-type-badge.work     { background:#0d2a1a; color:#4ade80; }
   body.dark .email-type-badge.personal { background:#2a1f0a; color:#fbbf24; }
-  /* ── Outreach type toggle ── */
-  .outreach-type-row { display:flex; gap:6px; margin-bottom:12px; }
-  .outreach-type-btn { 
-    flex:1; padding:14px 8px; border:none; border-radius:10px; background:var(--surface); 
-    font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; transition:all 0.15s; text-align:center; 
+  /* ── Outreach type toggle (segmented control) ── */
+  .outreach-type-row {
+    display:flex; gap:0; margin-bottom:12px;
+    background:var(--surface2); border:1px solid var(--border); border-radius:9px; padding:2px;
+  }
+  .outreach-type-btn {
+    flex:1; padding:7px 8px; border:none; border-radius:7px; background:transparent;
+    font-size:12px; font-weight:600; color:var(--text-muted); cursor:pointer; transition:all 0.15s; text-align:center;
   }
   .outreach-type-btn.active { background:var(--grad); color:white; }
-  .outreach-type-btn:hover:not(.active) { background:var(--surface2); color:var(--text); }
-  body.dark .outreach-type-btn { background:var(--surface); border-color:#2d3148; color:#9ca3af; }
-  body.dark .outreach-type-btn.active { background:var(--surface2); border-color:#3b82f6; color:#93b4ef; }
-  body.dark .outreach-type-btn:hover:not(.active) { background:#1e2235; border-color:#3d4165; color:#d1d5db; }
+  .outreach-type-btn:hover:not(.active) { color:var(--text); }
+  body.dark .outreach-type-row { background:#252836; border-color:#2d3148; }
+  body.dark .outreach-type-btn { background:transparent; color:#9ca3af; }
+  body.dark .outreach-type-btn.active { background:var(--grad); color:white; }
+  body.dark .outreach-type-btn:hover:not(.active) { color:#d1d5db; }
   /* ── Tone pills ── */
-  .tone-pills-row { display:flex; align-items:center; gap:5px; margin-bottom:8px; }
-  .tone-pills-label { font-size:10.5px; color:#9ca3af; font-weight:600; flex-shrink:0; min-width:34px; }
-  .tone-pill { padding:3px 11px; border:1.5px solid var(--border); border-radius:20px; background:#f9fafb; font-size:11px; font-weight:600; color:#6b7280; cursor:pointer; transition:all 0.12s; }
-  .tone-pill.active { background:#f0fdf4; border-color:#16a34a; color:#15803d; }
-  .tone-pill:hover:not(.active) { border-color:#d1d5db; background:#f3f4f6; }
+  .tone-pills-row { display:flex; align-items:center; gap:5px; margin-bottom:10px; }
+  .tone-pills-label { font-size:10.5px; color:var(--text-muted); font-weight:600; flex-shrink:0; min-width:34px; }
+  .tone-pill { padding:3px 11px; border:1.5px solid var(--border); border-radius:20px; background:var(--surface2); font-size:11px; font-weight:600; color:var(--text-muted); cursor:pointer; transition:all 0.12s; }
+  .tone-pill.active { background:rgba(224, 90, 24, 0.16); border-color:var(--accent-mid); color:var(--accent-amber); }
+  .tone-pill:hover:not(.active) { border-color:var(--border-bright); color:var(--text); }
   body.dark .tone-pill { background:var(--surface); border-color:#2d3148; color:#9ca3af; }
-  body.dark .tone-pill.active { background:#0d2a1a; border-color:#16a34a; color:#4ade80; }
+  body.dark .tone-pill.active { background:rgba(224, 90, 24, 0.18); border-color:#e05a18; color:#f0850a; }
   /* ── Sticky copy row ── */
-  .sticky-copy-row { position:sticky; bottom:0; background:#fff; padding:8px 0 2px; border-top:1px solid #f3f4f6; z-index:2; margin-top:6px; }
+  .sticky-copy-row { position:sticky; bottom:0; background:var(--surface); padding:8px 0 2px; border-top:1px solid var(--border); z-index:2; margin-top:6px; }
   body.dark .sticky-copy-row { background:var(--surface); border-top-color:#2d3148; }
   /* ── Separate work/personal email field rows ── */
   .cs-email-fields { display:flex; flex-direction:column; gap:3px; min-width:0; }
@@ -464,15 +417,15 @@
     border: 1px solid #e05a18;
   }
   .cs-email-field-label.personal { background:#fef3c7; color:#92400e; }
-  .cs-email-field-value { font-size:12px; font-weight:500; color:#111827; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; cursor:default; }
-  .cs-email-field-value:hover { color:#0a66c2; }
+  .cs-email-field-value { font-size:12px; font-weight:500; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; cursor:default; }
+  .cs-email-field-value:hover { color:var(--accent-mid); }
   .cs-email-copy { background:none; border:none; cursor:pointer; font-size:11px; color:#9ca3af; padding:0 2px; line-height:1; transition:color 0.12s; flex-shrink:0; }
   .cs-email-copy:hover { color:#6366f1; }
   .cs-no-email { font-size:12px; color:#9ca3af; }
   .cs-li-icon-btn { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:4px; background:#0a66c2; color:white; font-size:10px; font-weight:800; text-decoration:none; flex-shrink:0; transition:background 0.12s; line-height:1; }
   .cs-li-icon-btn:hover { background:#0855a5; }
   .cs-collapse-btn { background:none; border:none; cursor:pointer; color:#9ca3af; font-size:13px; padding:0 2px; line-height:1; transition:all 0.15s; flex-shrink:0; }
-  .cs-collapse-btn:hover { color:#374151; }
+  .cs-collapse-btn:hover { color:var(--text); }
   body.dark .cs-collapse-btn:hover { color:#d1d5db; }
   body.dark .cs-email-field-value { color:#e5e7eb; }
   body.dark .cs-email-field-value:hover { color:#93b4ef; }
@@ -488,12 +441,26 @@
   body.dark .title-badge.unverified { background:#2a1f0a; color:#fbbf24; }
 
   /* ── Lookup history rows ── */
-  .diag-history-row { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid #f3f4f6; font-size:11px; }
+  .diag-history-row { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--border); font-size:11px; }
   .diag-history-row:last-child { border-bottom:none; padding-bottom:0; }
   .diag-history-icon { flex-shrink:0; font-size:11px; }
-  .diag-history-name { font-weight:600; color:#111827; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
-  .diag-history-source { color:#9ca3af; flex-shrink:0; font-size:10.5px; }
-  .diag-history-time { color:#d1d5db; font-size:10px; flex-shrink:0; }
+  .diag-history-name { font-weight:600; color:var(--text); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .diag-history-source { color:var(--text-muted); flex-shrink:0; font-size:10.5px; }
+  .diag-history-time { color:var(--text-faint); font-size:10px; flex-shrink:0; }
+
+  /* ── Diagnostics: shared labels + Campaigns section ── */
+  .diag-label { font-size:12px; font-weight:600; color:var(--text); }
+  .diag-value { font-size:12.5px; color:var(--text-muted); }
+  .diag-value.connected { color:#4ade80; font-weight:600; }
+  .diag-sub-label { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:3px; }
+  .diag-empty { font-size:11px; color:var(--text-muted); }
+  .diag-event-row { display:flex; align-items:baseline; gap:8px; padding:4px 0; border-bottom:1px solid var(--border); font-size:11px; }
+  .diag-event-row:last-child { border-bottom:none; }
+  .diag-event-text { flex:1; color:var(--text); min-width:0; }
+  .diag-event-time { color:var(--text-faint); font-size:10px; flex-shrink:0; }
+  body.dark .diag-label { color:#e5e7eb; }
+  body.dark .diag-event-row, body.dark .diag-history-row { border-bottom-color:#2d3148; }
+  body.dark .diag-event-text { color:#d1d5db; }
   body.dark .diag-history-row { border-bottom-color:#2d3148; }
   body.dark .diag-history-name { color:#e5e7eb; }
   body.dark .diag-history-source { color:#4b5563; }
@@ -540,7 +507,7 @@
     transition: transform 0.15s, color 0.15s;
   }
   .diag-expand-btn:hover { color:#6b7280; }
-  .diag-expand-btn.expanded { transform: rotate(90deg); color:#0a66c2; }
+  .diag-expand-btn.expanded { transform: rotate(90deg); color:var(--accent-mid); }
   body.dark .diag-expand-btn { color:#4b5563; }
   body.dark .diag-expand-btn:hover { color:#6b7280; }
   body.dark .diag-expand-btn.expanded { color:#93b4ef; }
@@ -557,7 +524,7 @@
 
   #batchDrawer {
     position: fixed; inset: 0; z-index: 200;
-    background: #f0f2f5;
+    background: var(--bg);
     transform: translateX(100%);
     transition: transform 0.22s ease;
     display: flex; flex-direction: column;
@@ -567,27 +534,29 @@
   body.dark #batchDrawer { background: #0f1117; }
 
   .batch-header {
-    background: #0a66c2; color: white;
+    background: #0a0a0a; color: var(--text);
+    border-bottom: 1px solid var(--border);
     padding: 10px 14px;
     display: flex; align-items: center; gap: 8px;
     flex-shrink: 0;
   }
   .batch-back-btn {
-    background: none; border: none; color: white; cursor: pointer;
-    font-size: 16px; padding: 0 4px; line-height: 1; opacity: 0.85;
-    transition: opacity 0.12s;
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    font-size: 16px; padding: 0 4px; line-height: 1;
+    transition: color 0.12s;
   }
-  .batch-back-btn:hover { opacity: 1; }
-  .batch-header-title { font-size: 14px; font-weight: 700; flex: 1; }
-  body.dark .batch-header { background: var(--surface2); }
+  .batch-back-btn:hover { color: var(--text); }
+  .batch-header-title { font-size: 14px; font-weight: 700; flex: 1; color: var(--accent-mid); }
+  body.dark .batch-header { background: var(--surface2); border-color: #2d3148; }
+  body.dark .batch-header-title { color: #93b4ef; }
 
   .batch-status-bar {
     padding: 6px 12px; font-size: 11.5px; display: none; flex-shrink: 0;
   }
-  .batch-status-bar.info    { background: #eff6ff; color: #1d4ed8; border-bottom: 1px solid #bfdbfe; display: block; }
-  .batch-status-bar.success { background: #f0fdf4; color: #166534; border-bottom: 1px solid #bbf7d0; display: block; }
-  .batch-status-bar.warn    { background: #fffbeb; color: #92400e; border-bottom: 1px solid #fde68a; display: block; }
-  .batch-status-bar.error   { background: #fff1f2; color: #be123c; border-bottom: 1px solid #fecdd3; display: block; }
+  .batch-status-bar.info    { background: #1e2a40; color: #93b4ef; border-bottom: 1px solid #2a4d7a; display: block; }
+  .batch-status-bar.success { background: #0d2a1a; color: #4ade80; border-bottom: 1px solid #166534; display: block; }
+  .batch-status-bar.warn    { background: #2a1f0a; color: #fbbf24; border-bottom: 1px solid #78350f; display: block; }
+  .batch-status-bar.error   { background: #2a0f0f; color: #f87171; border-bottom: 1px solid #5a1a1a; display: block; }
   body.dark .batch-status-bar.info    { background: var(--surface2); color: #93b4ef; border-color: #2a4d7a; }
   body.dark .batch-status-bar.success { background: #0d2a1a; color: #4ade80; border-color: #166534; }
   body.dark .batch-status-bar.warn    { background: #2a1f0a; color: #fbbf24; border-color: #78350f; }
@@ -595,8 +564,8 @@
 
   .batch-credit-warning {
     display: none; margin: 8px 12px; padding: 10px 12px;
-    background: #fffbeb; border: 1px solid #fde68a; border-radius: 7px;
-    font-size: 12px; color: #92400e; flex-shrink: 0;
+    background: #2a1f0a; border: 1px solid #78350f; border-radius: 7px;
+    font-size: 12px; color: #fbbf24; flex-shrink: 0;
   }
   .batch-credit-warning .batch-credit-msg { margin-bottom: 8px; line-height: 1.5; }
   body.dark .batch-credit-warning { background: #2a1f0a; border-color: #78350f; color: #fbbf24; }
@@ -612,7 +581,7 @@
     width: 18px; height: 18px; border-radius: 50%; background: var(--border); color: var(--text-muted);
     font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;
   }
-  .batch-step-num.done { background: #dcfce7; color: #166534; }
+  .batch-step-num.done { background: #0d2a1a; color: #4ade80; }
   body.dark .batch-step-title { color: #4b5563; }
   body.dark .batch-step-num { background: #2d3148; color: var(--text-muted); }
   body.dark .batch-step-num.done { background: #0d2a1a; color: #4ade80; }
@@ -626,7 +595,7 @@
   .batch-dropzone-icon { font-size: 24px; margin-bottom: 6px; }
   .batch-dropzone-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
   .batch-dropzone.compact { padding: 10px 12px; justify-content: center; }
-  .file-pill { font-size: 12px; color: #374151; font-weight: 500; }
+  .file-pill { font-size: 12px; color: var(--text); font-weight: 500; }
   body.dark .file-pill { color: #d1d5db; }
   body.dark .batch-dropzone { border-color: #3a3d52; color: var(--text-muted); }
   body.dark .batch-dropzone:hover, body.dark .batch-dropzone.dragover { border-color: #93b4ef; background: #1e2a40; color: #93b4ef; }
@@ -648,13 +617,13 @@
   .batch-btn-sm { padding: 4px 9px; font-size: 11px; background: var(--surface); color: var(--text); border: 1.5px solid var(--border); border-radius: 5px; }
   .batch-btn-sm:hover { background: var(--surface2); border-color: var(--border-bright); }
   .batch-btn-xs { padding: 3px 7px; font-size: 10.5px; background: var(--surface2); color: var(--accent-mid); border: 1px solid var(--border); border-radius: 4px; }
-  .batch-btn-xs:hover { background: #dbeafe; }
-  .batch-btn-danger { background: #fff1f2; color: #be123c; border: 1.5px solid #fecdd3; }
-  .batch-btn-danger:hover { background: #ffe4e6; }
+  .batch-btn-xs:hover { background: rgba(224, 90, 24, 0.14); border-color: var(--accent-mid); }
+  .batch-btn-danger { background: #2a0f0f; color: #f87171; border: 1.5px solid #5a1a1a; }
+  .batch-btn-danger:hover { background: #3a1515; }
   .batch-btn-gmail { background: var(--surface); color: var(--text); border: 1.5px solid var(--border); padding: 4px 9px; font-size: 11px; }
   .batch-btn-gmail:hover { background: var(--surface2); }
-  .batch-btn-outlook { background: #0078d4; color: white; padding: 4px 9px; font-size: 11px; }
-  .batch-btn-outlook:hover { background: #006cbf; }
+  .batch-btn-outlook { background: var(--surface); color: var(--text); border: 1.5px solid var(--border); padding: 4px 9px; font-size: 11px; }
+  .batch-btn-outlook:hover { background: var(--surface2); }
   body.dark .batch-btn-sm { background: var(--surface); color: #d1d5db; border-color: #3a3d52; }
   body.dark .batch-btn-sm:hover { background: #1e2a40; border-color: #3b5a8a; }
   body.dark .batch-btn-secondary { background: #252836; color: #d1d5db; border-color: #3a3d52; }
@@ -688,7 +657,7 @@
   body.dark .batch-input:focus, body.dark .batch-select:focus { border-color: #93b4ef; }
   body.dark .batch-label { color: var(--text-muted); }
 
-  .batch-preview-text { font-size: 11.5px; color: #16a34a; font-weight: 600; margin-top: 5px; }
+  .batch-preview-text { font-size: 11.5px; color: #4ade80; font-weight: 600; margin-top: 5px; }
   body.dark .batch-preview-text { color: #4ade80; }
 
   .batch-candidate-row {
@@ -709,16 +678,16 @@
   body.dark .batch-candidate-meta { color: var(--text-muted); }
 
   .batch-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 10px; }
-  .batch-badge.ok     { background: #dcfce7; color: #166534; }
-  .batch-badge.warn   { background: #fef3c7; color: #92400e; }
-  .batch-badge.gray   { background: #f3f4f6; color: var(--text-muted); }
-  .batch-badge.info   { background: #dbeafe; color: #1e40af; }
-  .batch-badge.ok-sm     { background: #dcfce7; color: #166534; font-size: 10px; padding: 1px 5px; }
-  .batch-badge.warn-sm   { background: #fef3c7; color: #92400e; font-size: 10px; padding: 1px 5px; }
-  .batch-badge.gray-sm   { background: #f3f4f6; color: var(--text-muted); font-size: 10px; padding: 1px 5px; }
-  .batch-badge.info-sm   { background: #dbeafe; color: #1e40af; font-size: 10px; padding: 1px 5px; }
-  .batch-badge.green-sm  { background: #dcfce7; color: #166534; font-size: 10px; padding: 1px 5px; }
-  .batch-badge.err-sm    { background: #fee2e2; color: #991b1b; font-size: 10px; padding: 1px 5px; }
+  .batch-badge.ok     { background: #0d2a1a; color: #4ade80; }
+  .batch-badge.warn   { background: #2a1f0a; color: #fbbf24; }
+  .batch-badge.gray   { background: var(--surface2); color: var(--text-muted); }
+  .batch-badge.info   { background: #1e2a40; color: #93b4ef; }
+  .batch-badge.ok-sm     { background: #0d2a1a; color: #4ade80; font-size: 10px; padding: 1px 5px; }
+  .batch-badge.warn-sm   { background: #2a1f0a; color: #fbbf24; font-size: 10px; padding: 1px 5px; }
+  .batch-badge.gray-sm   { background: var(--surface2); color: var(--text-muted); font-size: 10px; padding: 1px 5px; }
+  .batch-badge.info-sm   { background: #1e2a40; color: #93b4ef; font-size: 10px; padding: 1px 5px; }
+  .batch-badge.green-sm  { background: #0d2a1a; color: #4ade80; font-size: 10px; padding: 1px 5px; }
+  .batch-badge.err-sm    { background: #2a0f0f; color: #f87171; font-size: 10px; padding: 1px 5px; }
   body.dark .batch-badge.ok   { background: #0d2a1a; color: #4ade80; }
   body.dark .batch-badge.warn { background: #2a1f0a; color: #fbbf24; }
   body.dark .batch-badge.gray { background: #252836; color: var(--text-muted); }
@@ -737,11 +706,11 @@
   body.dark .batch-progress-text { color: #4b5563; }
 
   .batch-link-job-row {
-    background: #fffbeb; border: 1px solid #fde68a; border-radius: 7px;
+    background: #2a1f0a; border: 1px solid #78350f; border-radius: 7px;
     padding: 10px 12px; margin-bottom: 10px;
   }
   body.dark .batch-link-job-row { background: #2a1f0a; border-color: #78350f; }
-  .batch-link-job-label { font-size: 11.5px; color: #92400e; margin-bottom: 7px; font-weight: 500; }
+  .batch-link-job-label { font-size: 11.5px; color: #fbbf24; margin-bottom: 7px; font-weight: 500; }
   body.dark .batch-link-job-label { color: #fbbf24; }
   .batch-link-job-controls { display: flex; gap: 6px; }
   .batch-link-job-controls .batch-select { flex: 1; }
@@ -753,17 +722,17 @@
   .batch-review-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
   .batch-review-name { font-size: 13px; font-weight: 600; color: var(--text); }
   .batch-review-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-  .batch-review-subject { font-size: 11px; font-weight: 600; color: #374151; margin-bottom: 5px; }
+  .batch-review-subject { font-size: 11px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
   .batch-review-body {
     width: 100%; min-height: 90px; padding: 7px 9px; border: 1.5px solid var(--border); border-radius: 6px;
-    font-size: 12px; line-height: 1.6; color: #374151; resize: vertical; outline: none; font-family: inherit;
-    background: #fafafa; transition: border-color 0.15s;
+    font-size: 12px; line-height: 1.6; color: var(--text); resize: vertical; outline: none; font-family: inherit;
+    background: var(--surface2); transition: border-color 0.15s;
   }
   .batch-review-body:focus { border-color: var(--accent-mid); }
   .batch-review-actions { display: flex; gap: 6px; margin-top: 8px; }
   .batch-review-actions .batch-btn { flex: 1; text-align: center; }
   .batch-review-counter { font-size: 11px; color: var(--text-muted); text-align: center; margin-bottom: 8px; }
-  .batch-review-done { text-align: center; padding: 20px 12px; font-size: 13px; color: #166534; font-weight: 600; }
+  .batch-review-done { text-align: center; padding: 20px 12px; font-size: 13px; color: #4ade80; font-weight: 600; }
   body.dark .batch-review-name { color: #e5e7eb; }
   body.dark .batch-review-meta { color: var(--text-muted); }
   body.dark .batch-review-subject { color: #d1d5db; }
@@ -773,39 +742,43 @@
   body.dark .batch-review-done { color: #4ade80; }
 
   .batch-filter-bar { display:flex; gap:5px; align-items:center; margin-bottom:8px; flex-wrap:wrap; margin-top:4px; }
-  .batch-filter-btn { padding:3px 10px; border:1.5px solid var(--border); border-radius:20px; background:#f9fafb; font-size:10.5px; font-weight:600; color:#6b7280; cursor:pointer; transition:all 0.12s; }
-  .batch-filter-btn.active { background:#eff6ff; border-color:#3b82f6; color:#1d4ed8; }
-  .batch-filter-btn:hover:not(.active) { border-color:#d1d5db; }
+  .batch-filter-btn { padding:3px 10px; border:1.5px solid var(--border); border-radius:20px; background:var(--surface2); font-size:10.5px; font-weight:600; color:var(--text-muted); cursor:pointer; transition:all 0.12s; }
+  .batch-filter-btn.active { background:rgba(224, 90, 24, 0.16); border-color:var(--accent-mid); color:var(--accent-amber); }
+  .batch-filter-btn:hover:not(.active) { border-color:var(--border-bright); color:var(--text); }
   body.dark .batch-filter-btn { background:var(--surface); border-color:#2d3148; color:#9ca3af; }
   body.dark .batch-filter-btn.active { background:var(--surface2); border-color:#3b82f6; color:#93b4ef; }
 
-  .batch-badge.purple-sm { background:#f3e8ff; color:#7e22ce; font-size:10px; padding:1px 5px; }
+  .batch-badge.purple-sm { background:#2d1b4e; color:#c084fc; font-size:10px; padding:1px 5px; }
   body.dark .batch-badge.purple-sm { background:#2d1b4e; color:#c084fc; }
-  .batch-followup-btn { border-color:#7e22ce !important; color:#7e22ce !important; }
-  .batch-followup-btn:hover { background:#f3e8ff !important; }
+  .batch-followup-btn { border-color:#c084fc !important; color:#c084fc !important; }
+  .batch-followup-btn:hover { background:#2d1b4e !important; }
   body.dark .batch-followup-btn { border-color:#c084fc !important; color:#c084fc !important; }
   body.dark .batch-followup-btn:hover { background:#2d1b4e !important; }
-  .batch-responded-btn { border-color:#16a34a !important; color:#16a34a !important; }
-  .batch-responded-btn:hover { background:#dcfce7 !important; }
+  .batch-responded-btn { border-color:#4ade80 !important; color:#4ade80 !important; }
+  .batch-responded-btn:hover { background:#0d2a1a !important; }
   body.dark .batch-responded-btn { border-color:#4ade80 !important; color:#4ade80 !important; }
   body.dark .batch-responded-btn:hover { background:#0d2a1a !important; }
-  .batch-days-badge { display:inline-block; font-size:9.5px; font-weight:600; padding:1px 6px; border-radius:10px; background:#f3f4f6; color:#6b7280; margin-left:4px; white-space:nowrap; vertical-align:middle; }
-  .batch-days-badge.overdue { background:#fef3c7; color:#b45309; }
+  .batch-days-badge { display:inline-block; font-size:9.5px; font-weight:600; padding:1px 6px; border-radius:10px; background:var(--surface2); color:var(--text-muted); margin-left:4px; white-space:nowrap; vertical-align:middle; }
+  .batch-days-badge.overdue { background:#2a1f0a; color:#fbbf24; }
   body.dark .batch-days-badge { background:#252836; color: var(--text-muted); }
   body.dark .batch-days-badge.overdue { background:#2a1f0a; color: #fbbf24; }
-  .batch-badge.teal-sm { background:#d1fae5; color:#065f46; font-size:10px; padding:1px 5px; }
+  .batch-badge.teal-sm { background:#042f2e; color:#34d399; font-size:10px; padding:1px 5px; }
   body.dark .batch-badge.teal-sm { background:#042f2e; color:#34d399; }
 
   .batch-conf-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 10px; margin-left: 5px; }
-  .batch-conf-badge.high { background: #dcfce7; color: #166534; }
-  .batch-conf-badge.mid  { background: #fef3c7; color: #92400e; }
-  .batch-conf-badge.low  { background: #fee2e2; color: #991b1b; }
+  .batch-conf-badge.high { background: #0d2a1a; color: #4ade80; }
+  .batch-conf-badge.mid  { background: #2a1f0a; color: #fbbf24; }
+  .batch-conf-badge.low  { background: #2a0f0f; color: #f87171; }
   body.dark .batch-conf-badge.high { background: #0d2a1a; color: #4ade80; }
   body.dark .batch-conf-badge.mid  { background: #2a1f0a; color: #fbbf24; }
   body.dark .batch-conf-badge.low  { background: #2a0f0f; color: #f87171; }
 
+  .batch-home-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+  .batch-home-title { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-muted); }
+  body.dark .batch-home-title { color:#4b5563; }
+
   .batch-prev-toggle { font-size: 11px; color: var(--accent-mid); cursor: pointer; text-decoration: underline; display: inline-block; margin-bottom: 10px; }
-  .batch-prev-toggle:hover { color: #0855a5; }
+  .batch-prev-toggle:hover { color: var(--accent-amber); }
   body.dark .batch-prev-toggle { color: #93b4ef; }
 
   .batch-campaign-row {
@@ -818,11 +791,11 @@
   .batch-campaign-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .batch-campaign-meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
   .batch-campaign-job { font-size: 11px; color: var(--text-muted); }
-  .batch-campaign-job.warn-text { color: #d97706; }
+  .batch-campaign-job.warn-text { color: #fbbf24; }
   .batch-campaign-counts { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
   .batch-resp-rate { font-size: 10.5px; font-weight: 600; margin-top: 3px; }
-  .batch-resp-rate.ok  { color: #16a34a; }
-  .batch-resp-rate.mid { color: #b45309; }
+  .batch-resp-rate.ok  { color: #4ade80; }
+  .batch-resp-rate.mid { color: #fbbf24; }
   .batch-resp-rate.low { color: var(--text-muted); }
   .batch-campaign-actions { display: flex; gap: 5px; flex-shrink: 0; }
   body.dark .batch-campaign-name { color: #e5e7eb; }
@@ -833,27 +806,27 @@
   body.dark .batch-resp-rate.low { color: var(--text-muted); }
 
   .reply-provider-row { padding:10px 0; }
-  .reply-provider-row + .reply-provider-row { border-top:1px solid #f3f4f6; }
-  .reply-provider-name { font-size:13px; font-weight:600; color:#111827; margin-bottom:3px; }
-  .reply-provider-status { font-size:11px; color:#9ca3af; margin-bottom:6px; }
-  .reply-provider-status.connected { color:#16a34a; font-weight:600; }
-  .reply-client-input { font-size:11px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; width:100%; box-sizing:border-box; margin-bottom:6px; font-family:ui-monospace,monospace; color:#374151; }
-  .reply-client-input:focus { outline:none; border-color:#3b82f6; }
-  .reply-setup-note { margin-top:10px; padding:10px; background:#f8fafc; border-radius:8px; border:1px solid var(--border); }
+  .reply-provider-row + .reply-provider-row { border-top:1px solid var(--border); }
+  .reply-provider-name { font-size:13px; font-weight:600; color:var(--text); margin-bottom:3px; }
+  .reply-provider-status { font-size:11px; color:var(--text-muted); margin-bottom:6px; }
+  .reply-provider-status.connected { color:#4ade80; font-weight:600; }
+  .reply-client-input { font-size:11px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; width:100%; box-sizing:border-box; margin-bottom:6px; font-family:ui-monospace,monospace; color:var(--text); background:var(--surface2); }
+  .reply-client-input:focus { outline:none; border-color:var(--accent-mid); }
+  .reply-setup-note { margin-top:10px; padding:10px; background:var(--surface2); border-radius:8px; border:1px solid var(--border); }
   body.dark .reply-provider-name { color:#e5e7eb; }
   body.dark .reply-provider-row + .reply-provider-row { border-top-color:#2d3148; }
   body.dark .reply-client-input { background:#252836; border-color:#3a3d52; color:#e5e7eb; }
   body.dark .reply-setup-note { background:var(--surface); border-color:#2d3148; }
 
   .disc-steps { display:flex; flex-wrap:wrap; align-items:center; gap:3px; font-size:11px; }
-  .disc-step { display:inline-flex; align-items:center; gap:3px; background:#f3f4f6; border-radius:5px; padding:2px 7px; color:#374151; }
-  .disc-step.hit  { background:#dcfce7; color:#15803d; }
-  .disc-step.ok   { background:#eff6ff; color:#1d4ed8; }
-  .disc-step.skip { background:#f9fafb; color:#9ca3af; }
-  .disc-step.miss { background:#fef2f2; color:#b91c1c; }
-  .disc-arrow { color:#d1d5db; font-size:10px; }
-  .disc-outcome { margin-top:6px; font-size:11px; font-weight:600; color:#16a34a; }
-  .disc-outcome.none { color:#9ca3af; font-weight:400; }
+  .disc-step { display:inline-flex; align-items:center; gap:3px; background:var(--surface2); border-radius:5px; padding:2px 7px; color:var(--text-muted); }
+  .disc-step.hit  { background:#14532d; color:#86efac; }
+  .disc-step.ok   { background:#1e2a40; color:#93c5fd; }
+  .disc-step.skip { background:var(--surface); color:var(--text-faint); }
+  .disc-step.miss { background:#450a0a; color:#fca5a5; }
+  .disc-arrow { color:var(--border-bright); font-size:10px; }
+  .disc-outcome { margin-top:6px; font-size:11px; font-weight:600; color:#4ade80; }
+  .disc-outcome.none { color:var(--text-muted); font-weight:400; }
   body.dark .disc-step       { background:#252836; color:#9ca3af; }
   body.dark .disc-step.hit   { background:#14532d; color:#86efac; }
   body.dark .disc-step.ok    { background:var(--surface2); color:#93c5fd; }
@@ -1074,22 +1047,17 @@
         <button class="outreach-type-btn" id="btnOutreachFollowUp">Follow-Up</button>
       </div>
 
-      <div id="profilePill" class="profile-detected-pill" style="display:none;">
-        <span class="profile-pill-dot"></span>
-        <span id="profilePillText" style="font-weight: 700;">LinkedIn profile detected</span>
-      </div>
-
-      <div class="tone-pills-row">
-        <span class="tone-pills-label">Tone</span>
-        <button class="tone-pill" id="tonePillFormal" data-tone="formal">Formal</button>
-        <button class="tone-pill" id="tonePillFriendly" data-tone="friendly">Friendly</button>
-        <button class="tone-pill" id="tonePillBrief" data-tone="brief">Brief</button>
-      </div>
-
       <button class="btn btn-ghost customize-toggle" id="customizeToggle">&#x25B8; Customize draft</button>
 
       <div id="customizeFields" style="display:none;">
-        <div class="form-group" style="margin-top:8px;">
+        <div class="tone-pills-row" style="margin-top:8px;">
+          <span class="tone-pills-label">Tone</span>
+          <button class="tone-pill" id="tonePillFormal" data-tone="formal">Formal</button>
+          <button class="tone-pill" id="tonePillFriendly" data-tone="friendly">Friendly</button>
+          <button class="tone-pill" id="tonePillBrief" data-tone="brief">Brief</button>
+        </div>
+        <div class="helper-text" style="margin:-2px 0 8px;">No pill selected = your preferred tone from Settings.</div>
+        <div class="form-group">
           <label for="fullNameInput">Full name <span style="color:#9ca3af;font-weight:400;">(auto-filled)</span></label>
           <input type="text" id="fullNameInput" placeholder="Populated from LinkedIn profile" autocomplete="off" />
         </div>
@@ -1112,15 +1080,12 @@
 
     <div id="statusMessage"></div>
 
-    <div id="progressSection" style="display:none;" class="card">
-      <div class="progress-step"><div class="progress-dot" id="dotEnrich"></div><div class="progress-label" id="lblEnrich">Finding contact details…</div></div>
-      <div class="progress-step"><div class="progress-dot" id="dotCompany"></div><div class="progress-label" id="lblCompany">Researching company signals…</div></div>
-      <div class="progress-step"><div class="progress-dot" id="dotDraft"></div><div class="progress-label" id="lblDraft">Writing draft…</div></div>
-      
-      <div class="btn-working">
-        <div class="spinner"></div>
-        <span>Working…</span>
+    <div id="progressSection" style="display:none;" class="card progress-card">
+      <div class="progress-head">
+        <span class="progress-phase-label" id="progressPhaseLabel">Finding email…</span>
+        <span class="progress-pct" id="progressPct">0%</span>
       </div>
+      <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progressBarFill"></div></div>
     </div>
 
     <div id="resultSummary" style="display:none;">
@@ -1139,7 +1104,7 @@
       <textarea id="draftBody" rows="7" spellcheck="true"></textarea>
       <div class="open-email-row">
         <button class="btn btn-gmail" id="btnOpenGmail">Gmail</button>
-        <button class="btn btn-outlook" id="btnOpenOutlook">&#x1F4E7; Outlook</button>
+        <button class="btn btn-outlook" id="btnOpenOutlook">Outlook</button>
       </div>
       <div class="copy-row sticky-copy-row">
         <button class="btn btn-ghost" id="btnCopyDraft" style="font-size:12px;">&#x1F4CB; Copy draft</button>
@@ -1210,43 +1175,67 @@
   <!-- ════════════ DIAGNOSTICS TAB ════════════ -->
   <div class="tab-content" id="tab-diagnostics">
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #e5e7eb;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border);">
         <div>
-          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">Extension</div>
-          <div id="diagExtVersion" style="font-size:13px;color:#6b7280;">—</div>
+          <div class="diag-label">Extension</div>
+          <div id="diagExtVersion" class="diag-value">—</div>
         </div>
         <div>
-          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">Server</div>
-          <div id="diagServerVersion" style="font-size:13px;color:#6b7280;">—</div>
+          <div class="diag-label">Server</div>
+          <div id="diagServerVersion" class="diag-value">—</div>
         </div>
       </div>
 
       <div style="margin-bottom:16px;">
-        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">Waterfall path</div>
+        <div class="diag-label" style="margin-bottom:6px;">Waterfall path</div>
         <div id="diagWaterfallPath" style="font-size:11px;"></div>
       </div>
-      
+
       <div id="diagDiscoveryField" style="display:none;margin-bottom:16px;">
-        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">How the email was found</div>
+        <div class="diag-label" style="margin-bottom:6px;">How the email was found</div>
         <div id="diagDiscovery" style="font-size:11px;"></div>
       </div>
-      
+
       <div id="diagPatternsField" style="display:none;margin-bottom:16px;">
-        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">Known email patterns</div>
+        <div class="diag-label" style="margin-bottom:6px;">Known email patterns</div>
         <div id="diagPatterns" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
       </div>
-      
+
       <div id="diagHistorySection" style="display:none;margin-bottom:16px;">
-        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">Recent lookups</div>
+        <div class="diag-label" style="margin-bottom:6px;">Recent lookups</div>
         <div id="diagHistory"></div>
       </div>
-      
-      <div id="diagMismatch" style="display:none;margin-bottom:12px;padding:8px 10px;border-radius:7px;font-size:11px;background:#fffbeb;color:#92400e;border:1px solid #fde68a;"></div>
-      
+
+      <div id="diagMismatch" style="display:none;margin-bottom:12px;padding:8px 10px;border-radius:7px;font-size:11px;background:#2a1f0a;color:#fbbf24;border:1px solid #78350f;"></div>
+
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn btn-ghost" id="diagRefresh" style="font-size:12px;">↻ Refresh</button>
         <button class="btn btn-ghost" id="diagCopyDebug" style="font-size:12px;" title="Copy full waterfall + scraper trace as JSON">⎘ Copy debug</button>
         <button class="btn btn-ghost" id="diagClearHistory" style="font-size:12px;color:#ef4444;" title="Clear the recent lookups list">✕ Clear history</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="diag-label" style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);">Campaigns</div>
+
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px;">
+        <div>
+          <div class="diag-sub-label">Gmail replies</div>
+          <div id="diagGmailStatus" class="diag-value">—</div>
+        </div>
+        <div>
+          <div class="diag-sub-label">Outlook replies</div>
+          <div id="diagOutlookStatus" class="diag-value">—</div>
+        </div>
+        <div>
+          <div class="diag-sub-label">Last inbox check</div>
+          <div id="diagReplyLastChecked" class="diag-value">—</div>
+        </div>
+      </div>
+
+      <div class="diag-sub-label" style="margin-bottom:6px;">Recent campaign activity</div>
+      <div id="diagCampaignEvents">
+        <div class="diag-empty">No campaign activity yet.</div>
       </div>
     </div>
   </div>
@@ -1399,39 +1388,46 @@
 
     <div class="batch-body" id="batchBody">
 
-      <span class="batch-prev-toggle" id="batchPrevToggle">Previous campaigns</span>
-      <div id="batchPrevCampaigns" style="display:none;margin-bottom:12px;">
+      <span class="batch-prev-toggle" id="batchBackToCampaigns" style="display:none;">&#x2039; All campaigns</span>
+
+      <div id="batchHomeSection">
+        <div class="batch-home-head">
+          <span class="batch-home-title">Your campaigns</span>
+          <button class="batch-btn batch-btn-sm" id="batchNewCampaignBtn">&#xFF0B; New campaign</button>
+        </div>
         <div id="batchCampaignList">
           <div class="batch-loading">Loading campaigns…</div>
         </div>
-      </div>
 
-      <div class="batch-step" id="batchStep1">
-        <div class="batch-step-title"><span class="batch-step-num" id="batchStepNum1">1</span> Select a job</div>
-        <div class="batch-section-card">
-          <div class="batch-form-group">
-            <select id="batchJobSelect" class="batch-select batch-job-select">
-              <option value="">— Select a saved job —</option>
-            </select>
+        <div id="batchNewCampaignSection" style="display:none;margin-top:12px;">
+          <div class="batch-step" id="batchStep1">
+            <div class="batch-step-title"><span class="batch-step-num" id="batchStepNum1">1</span> Select a job</div>
+            <div class="batch-section-card">
+              <div class="batch-form-group">
+                <select id="batchJobSelect" class="batch-select batch-job-select">
+                  <option value="">— Select a saved job —</option>
+                </select>
+              </div>
+              <div id="batchJobConfirm" class="batch-preview-text" style="display:none;"></div>
+            </div>
           </div>
-          <div id="batchJobConfirm" class="batch-preview-text" style="display:none;"></div>
-        </div>
-      </div>
 
-      <div class="batch-step" id="batchStep2">
-        <div class="batch-step-title"><span class="batch-step-num" id="batchStepNum2">2</span> Import candidates</div>
-        <div id="batchDropzone" class="batch-dropzone" tabindex="0">
-          <div class="batch-dropzone-icon">&#x1F4C4;</div>
-          <div>Drag &amp; drop a LinkedIn CSV here</div>
-          <div class="batch-dropzone-hint">or click and paste (Cmd+V / Ctrl+V) rows from your ATS</div>
-        </div>
-        <div id="batchImportForm" style="display:none;margin-top:8px;">
-          <div id="batchImportPreview" class="batch-preview-text" style="margin-bottom:8px;"></div>
-          <div class="batch-form-group">
-            <label class="batch-label">Campaign name</label>
-            <input type="text" id="batchCampaignName" class="batch-input" placeholder="e.g. AI Developer Pool — Q2" autocomplete="off" />
+          <div class="batch-step" id="batchStep2">
+            <div class="batch-step-title"><span class="batch-step-num" id="batchStepNum2">2</span> Import candidates</div>
+            <div id="batchDropzone" class="batch-dropzone" tabindex="0">
+              <div class="batch-dropzone-icon">&#x1F4C4;</div>
+              <div>Drag &amp; drop a LinkedIn CSV here</div>
+              <div class="batch-dropzone-hint">or click and paste (Cmd+V / Ctrl+V) rows from your ATS</div>
+            </div>
+            <div id="batchImportForm" style="display:none;margin-top:8px;">
+              <div id="batchImportPreview" class="batch-preview-text" style="margin-bottom:8px;"></div>
+              <div class="batch-form-group">
+                <label class="batch-label">Campaign name</label>
+                <input type="text" id="batchCampaignName" class="batch-input" placeholder="e.g. AI Developer Pool — Q2" autocomplete="off" />
+              </div>
+              <button class="batch-btn batch-btn-primary" id="batchImportBtn" disabled>Import candidates</button>
+            </div>
           </div>
-          <button class="batch-btn batch-btn-primary" id="batchImportBtn" disabled>Import candidates</button>
         </div>
       </div>
 
@@ -1448,11 +1444,9 @@
           </div>
         </div>
 
+        <button class="batch-btn batch-btn-primary" id="batchProcessAllBtn" disabled style="margin-bottom:8px;">&#x26A1; Process all</button>
         <div class="batch-action-bar">
-          <button class="batch-btn batch-btn-xs" id="batchEnrichAllBtn" disabled>&#x1F50D; Find missing emails</button>
-          <button class="batch-btn batch-btn-xs" id="batchDraftAllBtn" disabled>&#x2728; Generate drafts</button>
-        </div>
-        <div class="batch-action-bar" style="margin-top:-4px;">
+          <button class="batch-btn batch-btn-xs" id="batchEnrichAllBtn" style="display:none;">&#x1F50D; Find emails only</button>
           <span id="batchEnrichProgress" class="batch-progress-text"></span>
           <span id="batchDraftProgress" class="batch-progress-text"></span>
         </div>

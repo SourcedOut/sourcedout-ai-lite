@@ -13,14 +13,25 @@ let _allCandidates = []
 let _savedJobs = []
 let _batchRunId = 0
 let _parsedCandidates = []
-let _reviewIndex = 0
 let _filterStatus   = 'all'  // 'all' | 'needs_followup' | 'followed_up' | 'responded'
 let _followupDays   = 5      // overdue threshold (days), synced from settings
 let _followupAlerts = true   // amber highlighting enabled, synced from settings
 
+const DROPZONE_DEFAULT_HTML = '<div class="batch-dropzone-icon">&#x1F4C4;</div><div>Drag &amp; drop a LinkedIn CSV here</div><div class="batch-dropzone-hint">or click and paste (Cmd+V / Ctrl+V) rows from your ATS</div>'
+
 // ── Storage helper (chrome.storage.local) ─────────────────────────────────────
 function _batchGetStorage(keys) {
   return new Promise(r => chrome.storage.local.get(keys, r))
+}
+
+// ── Diagnostics event log (rendered in the Diagnostics tab) ───────────────────
+async function _logCampaignEvent(text) {
+  try {
+    const { sourcedout_campaign_events } = await _batchGetStorage(['sourcedout_campaign_events'])
+    const events = Array.isArray(sourcedout_campaign_events) ? sourcedout_campaign_events : []
+    events.unshift({ text, timestamp: Date.now() })
+    chrome.storage.local.set({ sourcedout_campaign_events: events.slice(0, 8) })
+  } catch {}
 }
 
 // ── DOM shorthand ──────────────────────────────────────────────────────────────
@@ -34,7 +45,7 @@ export async function openBatchDrawer() {
   if (statusMsg) { statusMsg.textContent = ''; statusMsg.className = ''; statusMsg.style.display = 'none' }
   await loadFollowupSettings()
   drawer.classList.add('open')
-  loadCampaignsList()
+  showHome()
   loadJobsForSelector()
 }
 
@@ -43,6 +54,55 @@ export function closeBatchDrawer() {
   if (!drawer) return
   drawer.classList.remove('open')
   _batchRunId++
+}
+
+// ── Home (campaign list) vs single-campaign view ─────────────────────────────
+function showHome() {
+  _activeCampaignId = null
+  _allCandidates = []
+  _batchRunId++
+  setBatchStatus('', '')
+  const linkRow = $('batchLinkJobRow')
+  if (linkRow) linkRow.style.display = 'none'
+  for (const i of [3, 4]) { const el = $(`batchStep${i}`); if (el) el.style.display = 'none' }
+  $('batchStepNum1')?.classList.remove('done')
+  $('batchStepNum2')?.classList.remove('done')
+  const back = $('batchBackToCampaigns')
+  if (back) back.style.display = 'none'
+  const home = $('batchHomeSection')
+  if (home) home.style.display = 'block'
+  resetImportForm()
+  setNewCampaignSectionOpen(false)  // loadCampaignsList re-opens it when there are no campaigns
+  loadCampaignsList()
+}
+
+function showCampaignView() {
+  const home = $('batchHomeSection')
+  if (home) home.style.display = 'none'
+  const back = $('batchBackToCampaigns')
+  if (back) back.style.display = 'inline-block'
+}
+
+function setNewCampaignSectionOpen(open) {
+  const section = $('batchNewCampaignSection')
+  if (section) section.style.display = open ? 'block' : 'none'
+  const btn = $('batchNewCampaignBtn')
+  if (btn) btn.textContent = open ? '× Cancel' : '＋ New campaign'
+}
+
+function resetImportForm() {
+  _parsedCandidates = []
+  const form = $('batchImportForm')
+  if (form) form.style.display = 'none'
+  const preview = $('batchImportPreview')
+  if (preview) preview.textContent = ''
+  const nameInput = $('batchCampaignName')
+  if (nameInput) nameInput.value = ''
+  const dropzone = $('batchDropzone')
+  if (dropzone) {
+    dropzone.classList.remove('compact')
+    dropzone.innerHTML = DROPZONE_DEFAULT_HTML
+  }
 }
 
 // ── CSV parser (RFC 4180, handles quoted fields and embedded newlines) ─────────
@@ -72,7 +132,9 @@ function parseCsv(text) {
 
 function csvToObjects(rows) {
   if (rows.length < 2) return []
-  const headers = rows[0].map(h => h.trim().toLowerCase())
+  // Normalize headers so "First Name", "first_name", "FIRST-NAME" all match "first name"
+  const normalizeHeader = h => h.replace(/^﻿/, '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ')
+  const headers = rows[0].map(normalizeHeader)
   const get = (row, ...keys) => {
     for (const k of keys) {
       const idx = headers.indexOf(k)
@@ -80,20 +142,33 @@ function csvToObjects(rows) {
     }
     return ''
   }
-  return rows.slice(1).filter(r => r.some(c => c.trim())).map(row => ({
-    first_name:      get(row, 'first name'),
-    last_name:       get(row, 'last name'),
-    headline:        get(row, 'headline'),
-    location:        get(row, 'location'),
-    current_title:   get(row, 'current title'),
-    current_company: get(row, 'current company'),
-    email:           get(row, 'email address', 'email'),
-    phone:           get(row, 'phone number', 'phone'),
-    linkedin_url:    get(row, 'profile url', 'linkedin url', 'linkedin'),
-    active_project:  get(row, 'active project'),
-    notes:           get(row, 'notes'),
-    feedback:        get(row, 'feedback'),
-  }))
+  return rows.slice(1).filter(r => r.some(c => c.trim())).map(row => {
+    let first = get(row, 'first name', 'firstname', 'given name')
+    let last  = get(row, 'last name', 'lastname', 'surname', 'family name')
+    // Fall back to splitting a single "Full Name" / "Name" column
+    if (!first && !last) {
+      const full = get(row, 'full name', 'fullname', 'name', 'candidate name')
+      if (full) {
+        const parts = full.split(/\s+/)
+        first = parts[0] || ''
+        last = parts.slice(1).join(' ')
+      }
+    }
+    return {
+      first_name:      first,
+      last_name:       last,
+      headline:        get(row, 'headline'),
+      location:        get(row, 'location'),
+      current_title:   get(row, 'current title', 'title', 'job title'),
+      current_company: get(row, 'current company', 'company', 'company name'),
+      email:           get(row, 'email address', 'email', 'work email', 'e mail'),
+      phone:           get(row, 'phone number', 'phone'),
+      linkedin_url:    get(row, 'profile url', 'linkedin url', 'linkedin', 'linkedin profile', 'profile link', 'public profile url'),
+      active_project:  get(row, 'active project'),
+      notes:           get(row, 'notes'),
+      feedback:        get(row, 'feedback'),
+    }
+  }).filter(c => c.first_name || c.last_name || c.email || c.linkedin_url)
 }
 
 // ── Load saved jobs for selectors ─────────────────────────────────────────────
@@ -128,7 +203,8 @@ async function loadCampaignsList() {
     const { campaigns } = await getCampaigns()
     list.innerHTML = ''
     if (!campaigns || campaigns.length === 0) {
-      list.innerHTML = '<div class="batch-empty">No campaigns yet.</div>'
+      list.innerHTML = '<div class="batch-empty">No campaigns yet — create your first below.</div>'
+      setNewCampaignSectionOpen(true)
       return
     }
     campaigns.forEach(c => {
@@ -186,14 +262,24 @@ async function openCampaign(campaignId, campaignData) {
     b.classList.toggle('active', b.dataset.filter === 'all')
   })
 
+  const linkRow = $('batchLinkJobRow')
   if (campaignData?.status === 'needs_job') {
     setBatchStatus('This campaign has no job linked yet. Link a job before enriching or drafting.', 'warn')
-    const linkRow = $('batchLinkJobRow')
     if (linkRow) linkRow.style.display = 'block'
+  } else {
+    setBatchStatus('', '')
+    if (linkRow) linkRow.style.display = 'none'
   }
 
+  showCampaignView()
   await loadCandidatePanel(campaignId)
-  showStep(3)
+  // If drafts are already waiting, surface the review queue immediately
+  if (_allCandidates.some(c => c.status === 'drafted')) {
+    loadReviewQueue()
+    showStep(4)
+  } else {
+    showStep(3)
+  }
 }
 
 // ── Progressive disclosure: show/hide steps ─────────────────────────────────
@@ -259,7 +345,7 @@ function readCsvFile(file) {
   reader.onload = e => {
     const rows = parseCsv(e.target.result)
     _parsedCandidates = csvToObjects(rows)
-    afterParse(file.name)
+    afterParse(file.name, rows)
   }
   reader.readAsText(file)
 }
@@ -267,20 +353,27 @@ function readCsvFile(file) {
 function handlePastedText(text) {
   const rows = parseCsv(text)
   _parsedCandidates = csvToObjects(rows)
-  afterParse('pasted data')
+  afterParse('pasted data', rows)
 }
 
-function afterParse(fileName) {
+function afterParse(fileName, rows = []) {
   if (_parsedCandidates.length === 0) {
-    setBatchStatus('No candidates found in the data. Ensure the CSV has "First Name" and "Last Name" columns.', 'warn')
+    const dataRows = rows.slice(1).filter(r => r.some(c => c.trim())).length
+    if (dataRows === 0) {
+      setBatchStatus('The file has no candidate rows — only headers. Re-export the CSV from your LinkedIn project and try again.', 'warn')
+    } else {
+      setBatchStatus(`Found ${dataRows} row${dataRows !== 1 ? 's' : ''} but no usable columns. The CSV needs a name (First/Last or Full Name), email, or LinkedIn profile URL column.`, 'warn')
+    }
     return
   }
+
+  setBatchStatus('', '')  // clear any stale parse warning from a previous file
 
   const count = _parsedCandidates.length
   const label = `${count} candidate${count !== 1 ? 's' : ''}`
   const dropzone = $('batchDropzone')
   if (dropzone) {
-    dropzone.innerHTML = `<span class="file-pill">📄 ${fileName} — ${label}</span>`
+    dropzone.innerHTML = `<span class="file-pill">📄 ${_esc(fileName)} — ${label}</span>`
     dropzone.classList.add('compact')
   }
 
@@ -290,11 +383,16 @@ function afterParse(fileName) {
   const form = $('batchImportForm')
   if (form) form.style.display = 'block'
 
+  // Prefill campaign name: Active Project column, else the CSV filename
   const firstProject = _parsedCandidates.find(c => c.active_project)?.active_project || ''
+  const fromFile = fileName !== 'pasted data'
+    ? fileName.replace(/\.csv$/i, '').replace(/[_-]+/g, ' ').trim()
+    : ''
   const nameInput = $('batchCampaignName')
-  if (nameInput && !nameInput.value.trim() && firstProject) nameInput.value = firstProject
+  if (nameInput && !nameInput.value.trim()) nameInput.value = firstProject || fromFile
 
   checkImportReady()
+  $('batchCampaignName')?.focus()
 }
 
 function checkImportReady() {
@@ -322,6 +420,7 @@ async function doImport() {
   if (importBtn) { importBtn.disabled = true; importBtn.textContent = 'Importing…' }
   setBatchStatus('', '')
 
+  const importedCount = _parsedCandidates.length
   try {
     const result = await importCampaign({
       campaignName: name,
@@ -330,27 +429,23 @@ async function doImport() {
     })
 
     if (result.creditWarning) {
-      showCreditWarning(result.creditWarning.message, result.creditWarning.available)
+      showCreditWarning(result.creditWarning.message)
     }
 
-    _parsedCandidates = []
-    if (nameInput) nameInput.value = ''
-    const preview = $('batchImportPreview')
-    if (preview) preview.textContent = ''
-    const form = $('batchImportForm')
-    if (form) form.style.display = 'none'
-    const dropzone = $('batchDropzone')
-    if (dropzone) {
-      dropzone.classList.remove('compact')
-      dropzone.innerHTML = '<div class="batch-dropzone-icon">📄</div><div>Drag & drop a LinkedIn CSV here</div><div class="batch-dropzone-hint">or click and paste (Cmd+V / Ctrl+V) rows from your ATS</div>'
-    }
+    _logCampaignEvent(`Imported ${importedCount} candidate${importedCount !== 1 ? 's' : ''} into "${name}"`)
+    resetImportForm()
+    setNewCampaignSectionOpen(false)
+    if (importBtn) { importBtn.disabled = true; importBtn.textContent = 'Import candidates' }
 
-    await loadCampaignsList()
     if (result.campaign?.id) {
       await openCampaign(result.campaign.id, result.campaign)
+    } else {
+      await loadCampaignsList()
     }
   } catch (e) {
-    setBatchStatus(_batchErrorMessage(e, 'Import failed. Try again.'), 'error')
+    const msg = _batchErrorMessage(e, 'Import failed. Try again.')
+    setBatchStatus(msg, 'error')
+    _logCampaignEvent(`Import of "${name}" failed: ${msg}`)
     if (importBtn) { importBtn.disabled = false; importBtn.textContent = 'Import candidates' }
   }
 }
@@ -426,6 +521,7 @@ async function _checkForReplies() {
       updateBatchActionButtons()
       setBatchStatus(`${newlyResponded} candidate${newlyResponded > 1 ? 's' : ''} auto-marked as responded.`, 'success')
       setTimeout(() => setBatchStatus('', ''), 4000)
+      _logCampaignEvent(`Inbox check: ${newlyResponded} repl${newlyResponded > 1 ? 'ies' : 'y'} detected, marked as responded`)
     }
   } finally {
     if (indicator) indicator.style.display = 'none'
@@ -496,11 +592,11 @@ function renderCandidateList(candidates) {
 
     row.querySelector('[data-enrich]')?.addEventListener('click', async e => {
       e.stopPropagation()
-      await runSingleEnrich(c.id, row)
+      await runSingleEnrich(c.id)
     })
     row.querySelector('[data-draft]')?.addEventListener('click', async e => {
       e.stopPropagation()
-      await runSingleDraft(c.id, row)
+      await runSingleDraft(c.id)
     })
     row.querySelector('[data-followup]')?.addEventListener('click', async e => {
       e.stopPropagation()
@@ -520,15 +616,33 @@ function renderCandidateList(candidates) {
 function updateBatchActionButtons() {
   const needsEnrich = _allCandidates.filter(c => ['imported','failed'].includes(c.status)).length
   const needsDraft  = _allCandidates.filter(c => c.status === 'enriched').length
-  const enrichBtn = $('batchEnrichAllBtn')
-  const draftBtn  = $('batchDraftAllBtn')
-  if (enrichBtn) {
-    enrichBtn.disabled = needsEnrich === 0
-    enrichBtn.textContent = needsEnrich > 0 ? `🔍 Find ${needsEnrich} emails` : '🔍 All emails found'
+  const processBtn   = $('batchProcessAllBtn')
+  const enrichOnlyBtn = $('batchEnrichAllBtn')
+  if (processBtn) {
+    if (needsEnrich > 0) {
+      processBtn.disabled = false
+      processBtn.textContent = `⚡ Process ${needsEnrich + needsDraft} candidate${needsEnrich + needsDraft !== 1 ? 's' : ''} — find emails & draft`
+    } else if (needsDraft > 0) {
+      processBtn.disabled = false
+      processBtn.textContent = `✨ Draft ${needsDraft} candidate${needsDraft !== 1 ? 's' : ''}`
+    } else {
+      processBtn.disabled = true
+      processBtn.textContent = '✓ All candidates processed'
+    }
   }
-  if (draftBtn) {
-    draftBtn.disabled = needsDraft === 0
-    draftBtn.textContent = needsDraft > 0 ? `✨ Draft ${needsDraft} candidates` : '✨ All drafted'
+  if (enrichOnlyBtn) enrichOnlyBtn.style.display = needsEnrich > 0 ? 'inline-block' : 'none'
+}
+
+// ── One-click pipeline: enrich everything, then draft everything ─────────────
+async function runProcessAll() {
+  if (!_activeCampaignId) return
+  const processBtn = $('batchProcessAllBtn')
+  if (processBtn) { processBtn.disabled = true; processBtn.textContent = '⚡ Processing…' }
+  try {
+    await runEnrichAll()
+    await runDraftAll()
+  } finally {
+    updateBatchActionButtons()
   }
 }
 
@@ -557,8 +671,10 @@ async function pollCandidateUntilDone(candidateId, { timeoutMs = 180000, interva
 }
 
 // ── Single enrich/draft ────────────────────────────────────────────────────────
-async function runSingleEnrich(candidateId, rowEl) {
-  if (rowEl) rowEl.classList.add('batch-row-processing')
+// Note: the list is re-rendered as soon as the interim status is set, so the
+// "enriching"/"drafting" badge is the progress indicator (row elements are
+// rebuilt by renderCandidateList and can't be styled directly here).
+async function runSingleEnrich(candidateId) {
   const idx0 = _allCandidates.findIndex(c => c.id === candidateId)
   if (idx0 !== -1) _allCandidates[idx0].status = 'enriching'
   renderCandidateList(_allCandidates)
@@ -582,22 +698,22 @@ async function runSingleEnrich(candidateId, rowEl) {
         }
       }
     }
-    if (rowEl) rowEl.classList.remove('batch-row-processing')
     renderCandidateList(_allCandidates)
     updateBatchActionButtons()
   } catch (e) {
-    if (rowEl) rowEl.classList.remove('batch-row-processing')
     const idx = _allCandidates.findIndex(c => c.id === candidateId)
     if (idx !== -1) _allCandidates[idx].status = 'failed'
     renderCandidateList(_allCandidates)
     if (e.code === 'CREDIT_LIMIT_REACHED') {
-      showCreditWarning('Credit limit reached. Upgrade to continue enriching.', 0)
+      showCreditWarning('Credit limit reached. Upgrade to continue enriching.')
     }
   }
 }
 
-async function runSingleDraft(candidateId, rowEl) {
-  if (rowEl) rowEl.classList.add('batch-row-processing')
+async function runSingleDraft(candidateId) {
+  const idx0 = _allCandidates.findIndex(c => c.id === candidateId)
+  if (idx0 !== -1) _allCandidates[idx0].status = 'drafting'
+  renderCandidateList(_allCandidates)
   try {
     const result = await draftCampaignCandidate({ candidateId })
     const idx = _allCandidates.findIndex(c => c.id === candidateId)
@@ -607,11 +723,15 @@ async function runSingleDraft(candidateId, rowEl) {
       _allCandidates[idx].draft_body = result.draft?.body || ''
       _allCandidates[idx].draft_confidence = result.draft?.confidence || 0
     }
-    if (rowEl) rowEl.classList.remove('batch-row-processing')
     renderCandidateList(_allCandidates)
     updateBatchActionButtons()
+    loadReviewQueue()
+    showStep(4)
   } catch {
-    if (rowEl) rowEl.classList.remove('batch-row-processing')
+    const idx = _allCandidates.findIndex(c => c.id === candidateId)
+    if (idx !== -1) _allCandidates[idx].status = 'enriched'
+    renderCandidateList(_allCandidates)
+    setBatchStatus('Draft failed — please try again.', 'error')
   }
 }
 
@@ -626,7 +746,7 @@ async function runEnrichAll() {
   const progressEl = $('batchEnrichProgress')
   if (enrichBtn) { enrichBtn.disabled = true; enrichBtn.textContent = 'Finding emails…' }
 
-  let done = 0
+  let done = 0, creditStop = false
   for (const candidate of toEnrich) {
     if (_batchRunId !== myRunId) break
     if (progressEl) progressEl.textContent = `${done} / ${toEnrich.length} checked…`
@@ -652,7 +772,8 @@ async function runEnrichAll() {
       const idx = _allCandidates.findIndex(c => c.id === candidate.id)
       if (idx !== -1) _allCandidates[idx].status = 'failed'
       if (e.code === 'CREDIT_LIMIT_REACHED') {
-        showCreditWarning('Credit limit reached. Upgrade to continue enriching.', 0)
+        showCreditWarning('Credit limit reached. Upgrade to continue enriching.')
+        creditStop = true
         break
       }
     }
@@ -662,8 +783,16 @@ async function runEnrichAll() {
 
   if (progressEl) progressEl.textContent = `${done} / ${toEnrich.length} checked`
   updateBatchActionButtons()
-  if (enrichBtn) enrichBtn.disabled = false
+  if (enrichBtn) { enrichBtn.disabled = false; enrichBtn.textContent = '🔍 Find emails only' }
   setTimeout(() => { if (progressEl) progressEl.textContent = '' }, 3000)
+
+  const ids = new Set(toEnrich.map(c => c.id))
+  const found   = _allCandidates.filter(c => ids.has(c.id) && ['enriched','drafted'].includes(c.status)).length
+  const noEmail = _allCandidates.filter(c => ids.has(c.id) && c.status === 'no_email').length
+  const failed  = _allCandidates.filter(c => ids.has(c.id) && c.status === 'failed').length
+  _logCampaignEvent(creditStop
+    ? `Email search stopped — credit limit reached (${found} found before stopping)`
+    : `Email search: ${found} found, ${noEmail} no email, ${failed} failed`)
 }
 
 // ── Batch draft all ────────────────────────────────────────────────────────────
@@ -673,14 +802,14 @@ async function runDraftAll() {
   if (toDraft.length === 0) return
   const myRunId = ++_batchRunId
 
-  const draftBtn = $('batchDraftAllBtn')
   const progressEl = $('batchDraftProgress')
-  if (draftBtn) { draftBtn.disabled = true; draftBtn.textContent = 'Generating drafts…' }
 
-  let done = 0
+  let done = 0, drafted = 0
   for (const candidate of toDraft) {
     if (_batchRunId !== myRunId) break
     if (progressEl) progressEl.textContent = `${done} / ${toDraft.length} drafted…`
+    const idx0 = _allCandidates.findIndex(c => c.id === candidate.id)
+    if (idx0 !== -1) { _allCandidates[idx0].status = 'drafting'; renderCandidateList(_allCandidates) }
     try {
       const result = await draftCampaignCandidate({ candidateId: candidate.id })
       const idx = _allCandidates.findIndex(c => c.id === candidate.id)
@@ -690,8 +819,11 @@ async function runDraftAll() {
         _allCandidates[idx].draft_body = result.draft?.body || ''
         _allCandidates[idx].draft_confidence = result.draft?.confidence || 0
       }
+      drafted++
     } catch {
-      // skip failed drafts
+      // skip failed drafts — revert so the candidate can be retried
+      const idx = _allCandidates.findIndex(c => c.id === candidate.id)
+      if (idx !== -1) _allCandidates[idx].status = 'enriched'
     }
     done++
     renderCandidateList(_allCandidates)
@@ -699,18 +831,20 @@ async function runDraftAll() {
 
   if (progressEl) progressEl.textContent = `${done} / ${toDraft.length} drafted`
   updateBatchActionButtons()
-  if (draftBtn) draftBtn.disabled = false
   setTimeout(() => { if (progressEl) progressEl.textContent = '' }, 3000)
+  _logCampaignEvent(`Drafted ${drafted} of ${toDraft.length} candidate${toDraft.length !== 1 ? 's' : ''}`)
 
-  if (done > 0) {
+  if (drafted > 0) {
     loadReviewQueue()
     showStep(4)
   }
 }
 
 // ── Review queue (one-at-a-time, Step 4) ─────────────────────────────────────
+// Every review action (Gmail/Outlook/Skip) moves the candidate out of 'drafted',
+// so the queue always shows the first remaining draft. (Indexing into the
+// shrinking filtered list used to skip every other candidate.)
 function loadReviewQueue() {
-  _reviewIndex = 0
   renderCurrentReview()
 }
 
@@ -726,14 +860,8 @@ function renderCurrentReview() {
     return
   }
 
-  if (_reviewIndex >= drafted.length) {
-    queue.innerHTML = '<div class="batch-review-done">All drafts reviewed!</div>'
-    if (counter) counter.textContent = ''
-    return
-  }
-
-  const c = drafted[_reviewIndex]
-  if (counter) counter.textContent = `${_reviewIndex + 1} of ${drafted.length}`
+  const c = drafted[0]
+  if (counter) counter.textContent = `${drafted.length} draft${drafted.length !== 1 ? 's' : ''} left to review`
 
   const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || '—'
   const email = c.work_email || c.personal_email || c.csv_email || ''
@@ -783,8 +911,9 @@ function renderCurrentReview() {
 }
 
 function advanceReview() {
-  _reviewIndex++
   renderCurrentReview()
+  renderCandidateList(_allCandidates)
+  updateBatchActionButtons()
 }
 
 async function approveCandidate(candidateId) {
@@ -907,29 +1036,31 @@ function setBatchStatus(msg, type) {
   el.className = `batch-status-bar${msg ? ' ' + type : ''}`
 }
 
-function showCreditWarning(message, available) {
+let _creditWarnTimer = null
+function showCreditWarning(message) {
   const el = $('batchCreditWarning')
   const msgEl = $('batchCreditWarningMsg')
   if (!el || !msgEl) return
   msgEl.textContent = message
   el.style.display = 'block'
-  $('batchCreditUpgradeBtn')?.addEventListener('click', () => openUpgradePage(), { once: true })
-  setTimeout(() => { el.style.display = 'none' }, 12000)
+  // Upgrade button is wired once in initBatch; re-showing must not stack
+  // listeners, and an old hide-timer must not dismiss this fresh warning early.
+  clearTimeout(_creditWarnTimer)
+  _creditWarnTimer = setTimeout(() => { el.style.display = 'none' }, 12000)
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 export function initBatch() {
   $('batchDrawerClose')?.addEventListener('click', closeBatchDrawer)
+  $('batchBackToCampaigns')?.addEventListener('click', showHome)
+  $('batchCreditUpgradeBtn')?.addEventListener('click', () => openUpgradePage())
 
-  const prevToggle = $('batchPrevToggle')
-  const prevList = $('batchPrevCampaigns')
-  if (prevToggle && prevList) {
-    prevToggle.addEventListener('click', () => {
-      const open = prevList.style.display !== 'none'
-      prevList.style.display = open ? 'none' : 'block'
-      prevToggle.textContent = open ? 'Previous campaigns' : 'Hide previous campaigns'
-    })
-  }
+  $('batchNewCampaignBtn')?.addEventListener('click', () => {
+    const section = $('batchNewCampaignSection')
+    const open = section && section.style.display !== 'none'
+    setNewCampaignSectionOpen(!open)
+    if (!open) section?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
 
   const jobSel = $('batchJobSelect')
   if (jobSel) {
@@ -949,14 +1080,14 @@ export function initBatch() {
   $('batchCampaignName')?.addEventListener('input', checkImportReady)
   $('batchImportBtn')?.addEventListener('click', doImport)
 
+  $('batchProcessAllBtn')?.addEventListener('click', async () => {
+    if (!_activeCampaignId) { setBatchStatus('Select a campaign first.', 'warn'); return }
+    await runProcessAll()
+  })
+
   $('batchEnrichAllBtn')?.addEventListener('click', async () => {
     if (!_activeCampaignId) { setBatchStatus('Select a campaign first.', 'warn'); return }
     await runEnrichAll()
-  })
-
-  $('batchDraftAllBtn')?.addEventListener('click', async () => {
-    if (!_activeCampaignId) { setBatchStatus('Select a campaign first.', 'warn'); return }
-    await runDraftAll()
   })
 
   // ── Follow-Up filter bar ────────────────────────────────────────────────────

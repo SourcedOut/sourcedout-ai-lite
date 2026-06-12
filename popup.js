@@ -64,20 +64,90 @@ function clearStatus() {
   el.style.display = 'none'
 }
 
-// ── Progress dots ─────────────────────────────────────────────────────────────
+// ── Lookup progress bar ───────────────────────────────────────────────────────
+const PROGRESS_PHASES = [
+  { key: 'enrich',  label: 'Finding email…',       to: 40 },
+  { key: 'company', label: 'Researching company…', to: 75 },
+  { key: 'draft',   label: 'Writing draft…',       to: 95 },
+]
+const _prog = { state: 'idle', phaseIdx: 0, value: 0, raf: null, lastTs: 0 }
+
+function _progRender() {
+  const fill = $('progressBarFill')
+  const pct = $('progressPct')
+  if (fill) fill.style.width = `${_prog.value}%`
+  if (pct) pct.textContent = `${Math.min(99, Math.floor(_prog.value))}%`
+}
+
+function _progTick(ts) {
+  if (_prog.state !== 'running') return
+  const dt = Math.min((ts - _prog.lastTs) / 1000, 0.1)
+  _prog.lastTs = ts
+  const target = PROGRESS_PHASES[_prog.phaseIdx].to
+  // Asymptotic crawl: approaches the phase ceiling but never reaches it
+  _prog.value += (target - _prog.value) * (1 - Math.exp(-1.1 * dt))
+  _progRender()
+  _prog.raf = requestAnimationFrame(_progTick)
+}
+
+function progressStart() {
+  cancelAnimationFrame(_prog.raf)
+  Object.assign(_prog, { state: 'running', phaseIdx: 0, value: 0, lastTs: performance.now() })
+  $('progressSection').classList.remove('error', 'success')
+  $('progressPhaseLabel').textContent = PROGRESS_PHASES[0].label
+  _progRender()
+  _prog.raf = requestAnimationFrame(_progTick)
+}
+
+function progressPhase(key) {
+  const idx = PROGRESS_PHASES.findIndex((p) => p.key === key)
+  if (_prog.state !== 'running' || idx <= _prog.phaseIdx) return
+  _prog.phaseIdx = idx
+  _prog.value = Math.max(_prog.value, PROGRESS_PHASES[idx - 1].to)
+  $('progressPhaseLabel').textContent = PROGRESS_PHASES[idx].label
+}
+
+function progressFinish() {
+  cancelAnimationFrame(_prog.raf)
+  _prog.state = 'finishing'
+  const from = _prog.value
+  const t0 = performance.now()
+  const step = (ts) => {
+    const t = Math.min((ts - t0) / 450, 1)
+    _prog.value = from + (100 - from) * (1 - Math.pow(1 - t, 3))
+    const fill = $('progressBarFill')
+    const pct = $('progressPct')
+    if (fill) fill.style.width = `${_prog.value}%`
+    if (pct) pct.textContent = `${Math.floor(_prog.value)}%`
+    if (t < 1) { _prog.raf = requestAnimationFrame(step); return }
+    _prog.state = 'done'
+    $('progressSection').classList.add('success')
+    $('progressPhaseLabel').textContent = '✓ Draft ready'
+    setTimeout(() => { showSection('progressSection', false); progressReset() }, 600)
+  }
+  _prog.raf = requestAnimationFrame(step)
+}
+
+function progressError() {
+  cancelAnimationFrame(_prog.raf)
+  _prog.state = 'error'
+  $('progressSection').classList.add('error')
+  $('progressPhaseLabel').textContent = 'Something went wrong'
+  setTimeout(() => { showSection('progressSection', false); progressReset() }, 900)
+}
+
+function progressReset() {
+  cancelAnimationFrame(_prog.raf)
+  Object.assign(_prog, { state: 'idle', phaseIdx: 0, value: 0 })
+  const sec = $('progressSection')
+  if (sec) sec.classList.remove('error', 'success')
+}
+
+// Shim keeping the original call sites working ('enrich' | 'company' | 'draft' | 'done')
 function setProgress(step) {
-  // step: 'enrich' | 'company' | 'draft' | 'done'
-  const steps = ['enrich', 'company', 'draft']
-  const idx = steps.indexOf(step)
-  steps.forEach((s, i) => {
-    const dot = $(`dot${s.charAt(0).toUpperCase() + s.slice(1)}`)
-    const lbl = $(`lbl${s.charAt(0).toUpperCase() + s.slice(1)}`)
-    if (!dot) return
-    if (step === 'done') { dot.className = 'progress-dot done'; if (lbl) lbl.className = 'progress-label done' }
-    else if (i < idx)   { dot.className = 'progress-dot done';  if (lbl) lbl.className = 'progress-label done' }
-    else if (i === idx) { dot.className = 'progress-dot active'; if (lbl) lbl.className = 'progress-label active' }
-    else                { dot.className = 'progress-dot';        if (lbl) lbl.className = 'progress-label' }
-  })
+  if (step === 'enrich') progressStart()
+  else if (step === 'done') progressFinish()
+  else progressPhase(step)
 }
 
 // ── UI sections ───────────────────────────────────────────────────────────────
@@ -86,7 +156,12 @@ function showSection(id, visible = true) {
   if (el) el.style.display = visible ? 'block' : 'none'
 }
 
+function generateButtonLabel() {
+  return _outreachType === 'follow_up' ? '↺ Generate follow-up' : '✨ Generate draft'
+}
+
 function resetToIdle() {
+  progressReset()
   showSection('progressSection', false)
   showSection('resultSummary', false)
   showSection('draftOutput', false)
@@ -96,11 +171,10 @@ function resetToIdle() {
   if (csConfRow) csConfRow.style.display = 'none'
   clearStatus()
   $('generateDraftButton').disabled = false
-  $('generateDraftButton').textContent = '✨ Generate draft'
+  $('generateDraftButton').textContent = generateButtonLabel()
 }
 
 function showErrorBox(message, isAuth = false, allowHtml = false) {
-  showSection('progressSection', false)
   showSection('resultSummary', false)
   showSection('draftOutput', false)
   const csConfRow = $('csConfidenceRow')
@@ -112,7 +186,7 @@ function showErrorBox(message, isAuth = false, allowHtml = false) {
   else           $('errorMessage').textContent = message
   $('authRecoveryButton').style.display = isAuth ? 'block' : 'none'
   $('generateDraftButton').disabled = false
-  $('generateDraftButton').textContent = '✨ Generate draft'
+  $('generateDraftButton').textContent = generateButtonLabel()
 }
 
 // ── Confidence display ────────────────────────────────────────────────────────
@@ -204,6 +278,7 @@ function populateCandidateSummary(result) {
   if (person.title) metaParts.push(person.title)
   if (person.company) metaParts.push(person.company)
   $('csMeta').textContent = metaParts.join(' · ')
+  $('csMeta').classList.remove('detected')
 
   // Client-side personal domain guard: even if the server mis-routes a gmail as work,
   // we reclassify it here so the field always shows the correct type.
@@ -466,7 +541,6 @@ async function generateDraftFlow() {
     clearTimeout(draftTimer)
     setProgress('done')
 
-    showSection('progressSection', false)
     _state = result.status === 'success' ? 'SUCCESS'
            : result.status === 'partial' ? 'PARTIAL_SUCCESS'
            : 'EMPTY_RESULT'
@@ -495,7 +569,7 @@ async function generateDraftFlow() {
   } catch (e) {
     clearTimeout(companyTimer)
     clearTimeout(draftTimer)
-    showSection('progressSection', false)
+    progressError()
 
     const err = parseErrorMessage(e)
     const auth = isAuthError(e) || isAuthError(err)
@@ -518,19 +592,25 @@ async function generateDraftFlow() {
     }
   } finally {
     _isGenerating = false
+    $('generateDraftButton').disabled = false
+    $('generateDraftButton').textContent = generateButtonLabel()
   }
 }
 
-// ── Profile pill helper ───────────────────────────────────────────────────────
+// ── Candidate card "detected" state (formerly the profile pill) ───────────────
 function updateProfilePill(label) {
-  const pill = $('profilePill')
-  const text = $('profilePillText')
-  if (!pill || !text) return
+  const card = $('candidateSummary')
+  if (!card) return
   if (label) {
-    text.textContent = label
-    pill.style.display = 'flex'
-  } else {
-    pill.style.display = 'none'
+    card.classList.add('visible')
+    if (!_lastResult) {
+      $('csName').textContent = label === 'LinkedIn profile detected' ? '—' : label
+      const meta = $('csMeta')
+      meta.textContent = 'LinkedIn profile detected — ready to draft'
+      meta.classList.add('detected')
+    }
+  } else if (!_lastResult) {
+    card.classList.remove('visible')
   }
 }
 
@@ -1011,6 +1091,7 @@ async function showMainApp(user) {
       $('companyHintInput').value = ''
       $('userContextInput').value = ''
       _linkedinUrl = null
+      _lastResult = null
       updateProfilePill(null)
       const fields = $('customizeFields'); const toggle = $('customizeToggle')
       if (fields && toggle) { fields.style.display = 'none'; toggle.textContent = '▸ Customize draft' }
@@ -1598,6 +1679,7 @@ async function renderDiagnostics() {
       'sourcedout_server_version_at',
       'sourcedout_lookup_history',
       'sourcedout_last_debug_trace',
+      'sourcedout_campaign_events',
     ])
     const serverVersion = stored.sourcedout_server_version || '—'
     const history       = Array.isArray(stored.sourcedout_lookup_history) ? stored.sourcedout_lookup_history : []
@@ -1680,7 +1762,60 @@ async function renderDiagnostics() {
     }
 
     if ($('diagMismatch')) $('diagMismatch').style.display = 'none'
+
+    // ── Campaigns section ─────────────────────────────────────────────────────
+    await renderCampaignDiagnostics(stored.sourcedout_campaign_events)
   } catch (e) { console.warn('renderDiagnostics failed:', e) }
+}
+
+async function renderCampaignDiagnostics(events) {
+  // Reply-detection connection status + last inbox check
+  try {
+    const [gmailSt, outlookSt, lastChecked] = await Promise.all([getGmailStatus(), getOutlookStatus(), getLastChecked()])
+    const setConn = (id, connected) => {
+      const el = $(id)
+      if (!el) return
+      el.textContent = connected ? '● Connected' : '○ Not connected'
+      el.classList.toggle('connected', connected)
+    }
+    setConn('diagGmailStatus', gmailSt.connected)
+    setConn('diagOutlookStatus', outlookSt.connected)
+    const checkedEl = $('diagReplyLastChecked')
+    if (checkedEl) {
+      if (!gmailSt.connected && !outlookSt.connected) {
+        checkedEl.textContent = '—'
+      } else if (lastChecked) {
+        const mins = Math.max(0, Math.round((Date.now() - lastChecked) / 60000))
+        checkedEl.textContent = mins === 0 ? 'just now' : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`
+      } else {
+        checkedEl.textContent = 'never'
+      }
+    }
+  } catch {}
+
+  // Recent campaign activity (logged by batch.js)
+  const eventsEl = $('diagCampaignEvents')
+  if (!eventsEl) return
+  const list = Array.isArray(events) ? events : []
+  if (!list.length) {
+    eventsEl.innerHTML = '<div class="diag-empty">No campaign activity yet.</div>'
+    return
+  }
+  eventsEl.innerHTML = ''
+  list.forEach(entry => {
+    const row = document.createElement('div')
+    row.className = 'diag-event-row'
+    const text = document.createElement('span')
+    text.className = 'diag-event-text'
+    text.textContent = entry.text
+    const time = document.createElement('span')
+    time.className = 'diag-event-time'
+    const mins = Math.max(0, Math.round((Date.now() - entry.timestamp) / 60000))
+    time.textContent = mins === 0 ? 'just now' : mins < 60 ? `${mins}m ago` : mins < 1440 ? `${Math.round(mins / 60)}h ago` : `${Math.round(mins / 1440)}d ago`
+    row.appendChild(text)
+    row.appendChild(time)
+    eventsEl.appendChild(row)
+  })
 }
 
 // ── Clear diagnostics history ──────────────────────────────────────────────────
