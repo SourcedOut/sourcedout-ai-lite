@@ -6,7 +6,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2"
 // The only LLM calls are draft generation (Sonnet) and job summarization (Haiku).
 
 // Bump this string every meaningful deploy so we can verify what's live.
-const FUNCTION_VERSION = "2026-06-12-lite-v1.3"
+const FUNCTION_VERSION = "2026-06-12-lite-v1.4"
 console.log(`[enrich-lite boot] FUNCTION_VERSION=${FUNCTION_VERSION}`)
 
 const cors = {
@@ -230,6 +230,12 @@ async function enrichWithLinkedInV2(linkedinUrl: string, key: string): Promise<{
 }> {
   const empty = { full_name: null, work_email: null, personal_email: null, title: null, company: null, company_domain: null, raw: null }
 
+  // The FullEnrich API key is shared with the Full version of SourcedOut.
+  // Tag every Lite request via the `custom` field (echoed back verbatim in
+  // results/webhooks) so usage is attributable per product: tagged = Lite,
+  // untagged = Full. Per FullEnrich support: custom values must be strings,
+  // max 20 entries.
+  const requestId = crypto.randomUUID()
   const startRes = await fetch('https://app.fullenrich.com/api/v2/contact/enrich/bulk', {
     method: 'POST',
     headers: {
@@ -237,8 +243,15 @@ async function enrichWithLinkedInV2(linkedinUrl: string, key: string): Promise<{
       'Authorization': `Bearer ${key}`,
     },
     body: JSON.stringify({
-      name: `OutreachAI-${Date.now()}`,
-      data: [{ linkedin_url: linkedinUrl, enrich_fields: ['contact.emails'] }],
+      name: `sourcedout-lite-${Date.now()}`,
+      data: [{
+        linkedin_url: linkedinUrl,
+        enrich_fields: ['contact.emails'],
+        custom: {
+          product_version: 'sourcedout-lite',
+          request_id: requestId,
+        },
+      }],
     }),
   })
 
