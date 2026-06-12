@@ -2,11 +2,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
 // SourcedOut AI Lite — API-driven enrichment.
-// Email finding is a 2-step waterfall: emailfinder.dev first, FullEnrich last.
+// Email finding is a 3-step waterfall: emailfinder.dev, then Generect, then FullEnrich.
 // The only LLM calls are draft generation (Sonnet) and job summarization (Haiku).
 
 // Bump this string every meaningful deploy so we can verify what's live.
-const FUNCTION_VERSION = "2026-06-11-lite-v1.1"
+const FUNCTION_VERSION = "2026-06-11-lite-v1.2"
 console.log(`[enrich-lite boot] FUNCTION_VERSION=${FUNCTION_VERSION}`)
 
 const cors = {
@@ -190,6 +190,28 @@ async function emailFinderByPerson(
   return { email: data?.valid_email || null, raw: data }
 }
 
+// ── Generect: pattern-generated email with server-side verification ───────────
+// Needs first/last name + the company web domain. Credits are consumed on
+// their side only when an email is returned (valid or catch_all).
+const GENERECT_TIMEOUT_MS = 30_000
+
+async function generectFindEmail(firstName: string, lastName: string, domain: string, key: string): Promise<{
+  email: string | null
+  status: 'valid' | 'catch_all' | 'not_found'
+  raw: any
+}> {
+  const res = await fetch('https://api.generect.com/emails/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+    body: JSON.stringify({ first_name: firstName, last_name: lastName, domain }),
+    signal: AbortSignal.timeout(GENERECT_TIMEOUT_MS),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(`generect error ${res.status}: ${JSON.stringify(data)}`)
+  const status = (data?.status === 'valid' || data?.status === 'catch_all') ? data.status : 'not_found'
+  return { email: (status !== 'not_found' && data?.email) ? data.email : null, status, raw: data }
+}
+
 // ── FullEnrich v2: LinkedIn URL → work email, personal email, name, title, company ──
 async function enrichWithLinkedInV2(linkedinUrl: string, key: string): Promise<{
   full_name: string | null
@@ -263,7 +285,7 @@ async function enrichWithLinkedInV2(linkedinUrl: string, key: string): Promise<{
   throw new Error('FullEnrich timeout — enrichment did not complete')
 }
 
-// ── 2-step contact waterfall: emailfinder.dev → FullEnrich ────────────────────
+// ── 3-step contact waterfall: emailfinder.dev → Generect → FullEnrich ─────────
 // Shared by the single-profile flow and the campaign batch flow.
 interface ContactResult {
   full_name: string | null
@@ -273,7 +295,7 @@ interface ContactResult {
   title_verified: boolean
   company: string | null
   email_status: 'found' | 'uncertain' | 'not_found'
-  source: 'emailfinder' | 'fullenrich_v2' | 'none'
+  source: 'emailfinder' | 'generect' | 'fullenrich_v2' | 'none'
   raw_data: any
 }
 
@@ -284,7 +306,7 @@ async function enrichContact(
     companyName: string | null
     companyDomain: string | null
   },
-  keys: { emailfinderKey: string; fullenrichKey: string },
+  keys: { emailfinderKey: string; generectKey: string; fullenrichKey: string },
   step: ReturnType<typeof makeStepLogger>['step'],
 ): Promise<ContactResult> {
   const out: ContactResult = {
@@ -335,7 +357,55 @@ async function enrichContact(
     return { status: 'SKIP', reason: 'no_linkedin_url_or_name_company' }
   })
 
-  // Step 2 — FullEnrich, only when emailfinder found nothing and we have a URL.
+  // Step 2 — Generect: pattern-generated email, verified on their side.
+  // Runs only on a full emailfinder miss. Needs a first/last name (emailfinder
+  // returns the name even on a miss) and a company web domain — with no domain
+  // it skips straight to FullEnrich. Errors are swallowed by the step logger
+  // and cascade silently.
+  if (!out.work_email && !out.personal_email) {
+    await step('generect', async () => {
+      if (!keys.generectKey) return { status: 'SKIP', reason: 'no_generect_key' }
+      const nameParts = (out.full_name || '').trim().split(/\s+/)
+      const firstName = nameParts[0] || ''
+      const lastName  = nameParts.slice(1).join(' ')
+      if (!firstName || !lastName) return { status: 'SKIP', reason: 'no_full_name' }
+      const domain = inputs.companyDomain
+      if (!domain) return { status: 'SKIP', reason: 'no_domain' }
+
+      const r = await generectFindEmail(firstName, lastName, domain, keys.generectKey)
+      out.raw_data.generect = r.raw
+
+      // Telemetry for hit-rate / blended-cost analysis (latency_ms and
+      // linkedin_url land in the step record + enrichment_debug_logs row).
+      const meta = {
+        linkedin_url: inputs.linkedinUrl,
+        domain_used: domain,
+        result_status: !r.email ? 'not_found'
+          : r.status === 'catch_all' ? 'uncertain'
+          : isPersonalEmailDomain(r.email) ? 'uncertain' : 'found',
+        email_domain_type: !r.email ? null
+          : r.status === 'catch_all' ? 'catch_all'
+          : isPersonalEmailDomain(r.email) ? 'personal' : 'work',
+        credited: !!r.email,
+        email: maskEmail(r.email),
+      }
+
+      if (!r.email) return { status: 'MISS', reason: 'no_valid_email', meta }
+
+      if (r.status === 'catch_all') {
+        // Catch-all domains accept any address, so "verified" is inconclusive:
+        // accept the email but flag it uncertain so the UI can warn.
+        out.work_email = r.email
+        out.email_status = 'uncertain'
+      } else {
+        classify(r.email)  // valid: work domain → found, personal → uncertain
+      }
+      out.source = 'generect'
+      return { status: 'OK', meta }
+    })
+  }
+
+  // Step 3 — FullEnrich, only when nothing found yet and we have a URL.
   if (!out.work_email && !out.personal_email && inputs.linkedinUrl) {
     await step('fullenrich_v2', async () => {
       if (!keys.fullenrichKey) return { status: 'SKIP', reason: 'no_fullenrich_key' }
@@ -356,7 +426,7 @@ async function enrichContact(
       return { status: 'MISS', reason: 'no_email' }
     })
   } else if (out.work_email || out.personal_email) {
-    await step('fullenrich_v2', async () => ({ status: 'SKIP', reason: 'email_found_via_emailfinder' }))
+    await step('fullenrich_v2', async () => ({ status: 'SKIP', reason: `email_found_via_${out.source}` }))
   }
 
   out.raw_data.waterfall_source = out.source
@@ -498,6 +568,7 @@ Deno.serve(async (req: Request) => {
   const serviceKey     = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const anthropicKey   = Deno.env.get('ANTHROPIC_API_KEY')   || ''
   const fullenrichKey  = Deno.env.get('FULLENRICH_API_KEY')  || ''
+  const generectKey    = Deno.env.get('GENERECT_API_KEY')    || ''
   const emailfinderKey = Deno.env.get('EMAILFINDER_API_KEY') || ''
   const db = createClient(supabaseUrl, serviceKey)
 
@@ -505,6 +576,7 @@ Deno.serve(async (req: Request) => {
     version: FUNCTION_VERSION,
     has_anthropic_key: !!anthropicKey,
     has_fullenrich_key: !!fullenrichKey,
+    has_generect_key: !!generectKey,
     has_emailfinder_key: !!emailfinderKey,
   }))
 
@@ -935,7 +1007,7 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
               companyName: companyHint,
               companyDomain: csvEmailDomain,
             },
-            { emailfinderKey, fullenrichKey },
+            { emailfinderKey, generectKey, fullenrichKey },
             step,
           )
 
@@ -1291,10 +1363,10 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
       return json({ error: { code: 'CREDIT_LIMIT_REACHED', message: 'You have reached your lookup limit. Upgrade your plan for more enrichments.' }, debug: { correlationId, records } }, 402)
     }
 
-    // ── 2-step waterfall: emailfinder.dev → FullEnrich ────────────────────────
+    // ── 3-step waterfall: emailfinder.dev → Generect → FullEnrich ─────────────
     const contact = await enrichContact(
       { linkedinUrl, fullName: fullNameHint, companyName: companyHint, companyDomain: null },
-      { emailfinderKey, fullenrichKey },
+      { emailfinderKey, generectKey, fullenrichKey },
       step,
     )
     await releaseLock()
@@ -1386,7 +1458,7 @@ Return ONLY the bullet list — no intro sentence, no JSON, no extra commentary.
       version: FUNCTION_VERSION,
       source: contact.source,
       email_status: emailStatus,
-      keys_missing: [!emailfinderKey && 'emailfinder', !fullenrichKey && 'fullenrich', !anthropicKey && 'anthropic'].filter(Boolean),
+      keys_missing: [!emailfinderKey && 'emailfinder', !generectKey && 'generect', !fullenrichKey && 'fullenrich', !anthropicKey && 'anthropic'].filter(Boolean),
     }))
 
     return json({

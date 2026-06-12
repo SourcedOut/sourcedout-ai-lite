@@ -1400,6 +1400,7 @@ function buildEmailSourceLabel(emailSource, _debug) {
 
   const SOURCE_MAP = {
     'emailfinder':   { icon: '📧', label: 'EmailFinder (real-time SMTP verified)' },
+    'generect':      { icon: '🎯', label: 'Generect (pattern + verification)' },
     'fullenrich_v2': { icon: '⚡', label: 'FullEnrich' },
     'saved_profile': { icon: '💾', label: 'saved profile' },
   }
@@ -1456,6 +1457,7 @@ async function storeLookupHistory(result) {
 const WATERFALL_STEPS = [
   { key: 'cache',         label: 'Cache',       quality: 'excellent' },
   { key: 'emailfinder',   label: 'EmailFinder', quality: 'good' },
+  { key: 'generect',      label: 'Generect',    quality: 'good' },
   { key: 'fullenrich_v2', label: 'FullEnrich',  quality: 'fallback' },
 ]
 const WATERFALL_WIN_STATUS = new Set(['OK', 'HIT'])
@@ -1526,6 +1528,7 @@ function renderDiscovery(waterfall, emailSource, fieldEl, el) {
   const STEP_LABELS = {
     'cache':         { label: 'Cache',           icon: '💾' },
     'emailfinder':   { label: 'EmailFinder',     icon: '📧' },
+    'generect':      { label: 'Generect',        icon: '🎯' },
     'fullenrich_v2': { label: 'FullEnrich',      icon: '⚡' },
     'sonnet_draft':  { label: 'Draft (Sonnet)',  icon: '✍️' },
     'saved_profile': { label: 'Cache hit',       icon: '💾' },
@@ -1622,16 +1625,19 @@ async function renderDiagnostics() {
         histEl.innerHTML = ''
         const SOURCE_ICONS = {
           'emailfinder':   '📧',
+          'generect':      '🎯',
           'fullenrich_v2': '⚡',
           'saved_profile': '💾',
         }
         const SOURCE_SHORT = {
           'emailfinder':   'EmailFinder',
+          'generect':      'Generect',
           'fullenrich_v2': 'FullEnrich',
           'saved_profile': 'saved profile',
         }
         const STEP_SHORT = {
           'fullenrich_v2': 'FullEnrich',
+          'generect':      'Generect',
           'emailfinder':   'EmailFinder',
           'cache':         'cache',
         }

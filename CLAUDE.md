@@ -13,7 +13,7 @@
 
 ## Architecture (lite)
 - Extension is vanilla JS, Manifest v3, no build step. Reload via chrome://extensions after edits.
-- Backend is one edge function (`supabase/functions/enrich-lite/index.ts`): 2-step email waterfall — emailfinder.dev first, FullEnrich fallback. Only LLM calls: Claude Sonnet drafts + Haiku job summaries.
+- Backend is one edge function (`supabase/functions/enrich-lite/index.ts`): 3-step email waterfall — emailfinder.dev first, Generect second (needs a company domain), FullEnrich last. Only LLM calls: Claude Sonnet drafts + Haiku job summaries.
 - No scraping anywhere: the popup sends the active tab's LinkedIn URL; emailfinder returns email + name/title/company.
 - `legacy/enrich-and-draft/` is the old 4,000-line waterfall, kept for reference — never deploy it.
 - `core/reply-checker.js` uses a separate OAuth flow (`chrome.identity` + chromiumapp.org redirect) for Gmail/Outlook reply detection — that chromiumapp URI in Settings is intentional, not stale.

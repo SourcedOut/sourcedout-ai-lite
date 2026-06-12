@@ -2,10 +2,10 @@
 
 A simplified, API-driven version of SourcedOut: a Chrome extension for recruiters that finds a candidate's verified work email from their LinkedIn profile and drafts a personalized outreach email.
 
-Unlike the original SourcedOut (LinkedIn DOM scraping + a 13-step email-guessing waterfall across multiple LLMs and search engines), Lite uses two purpose-built APIs and keeps exactly one LLM feature:
+Unlike the original SourcedOut (LinkedIn DOM scraping + a 13-step email-guessing waterfall across multiple LLMs and search engines), Lite uses three purpose-built APIs and keeps exactly one LLM feature:
 
 ```
-LinkedIn URL ──► emailfinder.dev ──► (miss?) FullEnrich ──► Claude Sonnet draft
+LinkedIn URL ──► emailfinder.dev ──► (miss?) Generect ──► (miss?) FullEnrich ──► Claude Sonnet draft
                  (email + name +        (fallback              (outreach email)
                   title + company)       enrichment)
 ```
@@ -31,7 +31,7 @@ Never run `supabase db push` or `supabase functions deploy` against the prod ref
 
 1. **Extension:** `chrome://extensions` → Developer mode → Load unpacked → this folder. Reload (↺) after code changes.
 2. **Auth:** the extension's redirect page is `chrome-extension://<extension-id>/auth.html`. Whitelist it in the Lite project under Authentication → URL Configuration, and add `https://ddhdffftvujupflqggki.supabase.co/auth/v1/callback` to the Google OAuth client's authorized redirect URIs.
-3. **Edge function secrets** (Lite project → Edge Functions → Secrets): `EMAILFINDER_API_KEY`, `FULLENRICH_API_KEY`, `ANTHROPIC_API_KEY`.
+3. **Edge function secrets** (Lite project → Edge Functions → Secrets): `EMAILFINDER_API_KEY`, `GENERECT_API_KEY`, `FULLENRICH_API_KEY`, `ANTHROPIC_API_KEY`.
 4. **Deploy the function:** `supabase functions deploy enrich-lite --project-ref ddhdffftvujupflqggki` (or via the Supabase MCP `deploy_edge_function`).
 
 ## Architecture notes

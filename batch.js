@@ -887,6 +887,7 @@ function _sourceBadge(source) {
   if (!source) return ''
   const map = {
     'emailfinder':   ['info-sm', 'EmailFinder'],
+    'generect':      ['info-sm', 'Generect'],
     'fullenrich_v2': ['warn-sm', 'FullEnrich'],
   }
   const [cls, label] = map[source] || ['gray-sm', source]
